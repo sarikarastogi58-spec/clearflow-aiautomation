@@ -96,3 +96,11 @@ test("provider configuration uses encrypted storage and never returns credential
   assert.doesNotMatch(dashboard, /MSG91|Resend|Google Places API key|WhatsApp Business/);
   assert.doesNotMatch(route, /return Response\.json\(\{[^}]*values/);
 });
+
+test("OpenAI quota exhaustion falls back to safe first-use support", async () => {
+  const ai = await readFile(new URL("../lib/ai.ts", import.meta.url), "utf8");
+  assert.match(ai, /insufficient_quota/);
+  assert.match(ai, /generateFallbackSupportReply/);
+  assert.match(ai, /basic support mode/i);
+  assert.match(ai, /band\\s\*karo/);
+});
