@@ -15,6 +15,9 @@ test("ClearFlow product shell exposes the required operating surfaces", async ()
   assert.match(dashboard, /AI Inbox/);
   assert.match(dashboard, /Campaigns/);
   assert.match(dashboard, /Connections/);
+  assert.match(dashboard, /Live workspace/);
+  assert.match(dashboard, /No sample data is being shown/);
+  assert.doesNotMatch(dashboard, /demoLeads|demoMetrics|Demo data|Preview mode/);
   assert.doesNotMatch(page + layout, /codex-preview|Your site is taking shape/i);
 });
 
