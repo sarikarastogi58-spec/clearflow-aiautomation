@@ -33,7 +33,7 @@ export async function POST(request: Request) {
       websiteUrl: input.websiteUrl ? String(input.websiteUrl) : null,
       websiteStatus: (input.websiteStatus as "none" | "broken" | "weak" | "good") ?? (input.websiteUrl ? "weak" : "none"),
       phone: String(input.phone ?? ""), email: String(input.email ?? ""),
-      hasBooking: Boolean(input.hasBooking), hasWhatsApp: Boolean(input.hasWhatsApp), hasHttps: Boolean(input.hasHttps),
+      hasBooking: Boolean(input.hasBooking), hasEnquiryCta: Boolean(input.hasEnquiryCta), hasHttps: Boolean(input.hasHttps),
     });
     const db = getDb();
     await db.batch([

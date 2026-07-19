@@ -1,78 +1,57 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gte } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { consents, events, followupJobs, leads, messages, suppressions } from "../../../db/schema";
-import { addDays, id } from "../../../lib/automation";
-import { secret } from "../../../lib/secrets";
-
-async function sendWhatsApp(to: string, template: string, businessName: string) {
-  const token = secret("WHATSAPP_ACCESS_TOKEN");
-  const phoneId = secret("WHATSAPP_PHONE_NUMBER_ID");
-  if (!token || !phoneId) throw new Error("WhatsApp credentials are not configured");
-  const response = await fetch(`https://graph.facebook.com/v23.0/${phoneId}/messages`, {
-    method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ messaging_product: "whatsapp", to, type: "template", template: {
-      name: template, language: { code: "en" }, components: [{ type: "body", parameters: [{ type: "text", text: businessName }] }],
-    } }),
-  });
-  const data = await response.json() as { messages?: Array<{ id: string }>; error?: { message?: string } };
-  if (!response.ok) throw new Error(data.error?.message ?? `WhatsApp returned ${response.status}`);
-  return data.messages?.[0]?.id ?? id("wamid");
-}
-
-async function sendSms(to: string, body: string) {
-  const sid = secret("TWILIO_ACCOUNT_SID");
-  const token = secret("TWILIO_AUTH_TOKEN");
-  const from = secret("TWILIO_SMS_FROM");
-  if (!sid || !token || !from) throw new Error("Twilio SMS credentials are not configured");
-  const form = new URLSearchParams({ To: to, From: from, Body: body });
-  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
-    method: "POST", headers: { Authorization: `Basic ${btoa(`${sid}:${token}`)}`, "Content-Type": "application/x-www-form-urlencoded" }, body: form,
-  });
-  const data = await response.json() as { sid?: string; message?: string };
-  if (!response.ok) throw new Error(data.message ?? `SMS provider returned ${response.status}`);
-  return data.sid ?? id("sms");
-}
-
-async function sendEmail(to: string, subject: string, body: string, idempotencyKey: string) {
-  const apiKey = secret("RESEND_API_KEY");
-  const from = secret("EMAIL_FROM");
-  if (!apiKey || !from) throw new Error("Email credentials are not configured");
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
-    body: JSON.stringify({ from, to: [to], subject, text: body }),
-  });
-  const data = await response.json() as { id?: string; message?: string };
-  if (!response.ok) throw new Error(data.message ?? `Email provider returned ${response.status}`);
-  return data.id ?? id("email");
-}
+import { addDays, id, normalizePhone } from "../../../lib/automation";
+import { sendGmailEmail } from "../../../lib/gmail";
+import { placeTwilioCall, sendTwilioSms } from "../../../lib/twilio";
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json() as { leadId?: string; channel?: string; to?: string; businessName?: string; template?: string; subject?: string; body?: string; idempotencyKey?: string };
+    const body = await request.json() as { leadId?: string; channel?: string; to?: string; subject?: string; body?: string; idempotencyKey?: string };
     if (!body.leadId || !body.channel || !body.to) return Response.json({ error: "leadId, channel, and destination are required" }, { status: 400 });
     const db = getDb();
     const suppression = await db.select().from(suppressions).where(and(eq(suppressions.leadId, body.leadId), eq(suppressions.channel, body.channel))).limit(1);
     if (suppression.length) return Response.json({ error: "CONTACT_SUPPRESSED", retryable: false }, { status: 409 });
     const consent = await db.select().from(consents).where(and(eq(consents.leadId, body.leadId), eq(consents.channel, body.channel), eq(consents.status, "granted"))).orderBy(desc(consents.capturedAt)).limit(1);
     if (!consent.length) return Response.json({ error: "CONSENT_REQUIRED", message: `Recorded ${body.channel} marketing consent is required`, retryable: false }, { status: 403 });
+    const oneMinuteAgo = new Date(Date.now() - 60_000).toISOString();
+    const recentChannelMessages = await db.select({ id: messages.id }).from(messages).where(and(eq(messages.direction, "outbound"), eq(messages.channel, body.channel), gte(messages.sentAt, oneMinuteAgo))).limit(20);
+    if (recentChannelMessages.length >= 20) return Response.json({ error: "CHANNEL_RATE_LIMITED", retryable: true }, { status: 429, headers: { "Retry-After": "60" } });
+    const recentContact = await db.select({ sentAt: messages.sentAt }).from(messages).where(and(eq(messages.leadId, body.leadId), eq(messages.direction, "outbound"), eq(messages.channel, body.channel))).orderBy(desc(messages.sentAt)).limit(1);
+    if (recentContact[0]?.sentAt && Date.now() - Date.parse(recentContact[0].sentAt) < 6 * 60 * 60 * 1000) {
+      return Response.json({ error: "CONTACT_RATE_LIMITED", message: "Wait at least six hours before contacting this lead again", retryable: true }, { status: 429, headers: { "Retry-After": "21600" } });
+    }
 
     let providerMessageId: string;
-    if (body.channel === "whatsapp") {
-      if (!body.template) return Response.json({ error: "APPROVED_TEMPLATE_REQUIRED" }, { status: 400 });
-      providerMessageId = await sendWhatsApp(body.to, body.template, body.businessName ?? "your business");
-    } else if (body.channel === "sms") {
+    const origin = new URL(request.url).origin;
+    const statusCallback = `${origin}/api/webhooks/twilio/status`;
+    if (body.channel === "sms") {
       if (!body.body?.trim()) return Response.json({ error: "SMS_BODY_REQUIRED" }, { status: 400 });
-      providerMessageId = await sendSms(body.to, body.body);
+      providerMessageId = await sendTwilioSms(body.to, body.body, statusCallback);
     } else if (body.channel === "email") {
       if (!body.body?.trim() || !body.subject?.trim()) return Response.json({ error: "EMAIL_SUBJECT_AND_BODY_REQUIRED" }, { status: 400 });
-      providerMessageId = await sendEmail(body.to, body.subject, body.body, body.idempotencyKey ?? `${body.leadId}:email:${Date.now()}`);
+      providerMessageId = await sendGmailEmail(body.to, body.subject, body.body, body.idempotencyKey ?? `${body.leadId}.email.${Date.now()}`);
+    } else if (body.channel === "voice") {
+      providerMessageId = await placeTwilioCall(body.to, `${origin}/api/webhooks/voice`, statusCallback);
     } else {
-      return Response.json({ error: `${body.channel} is inbound-support only; automated promotional calls are disabled` }, { status: 501 });
+      return Response.json({ error: `Unsupported outreach channel: ${body.channel}` }, { status: 400 });
     }
     const messageId = id("msg");
+    const now = new Date().toISOString();
+    const contactDetails = body.channel === "email"
+      ? { email: body.to.trim().toLowerCase() }
+      : { phone: normalizePhone(body.to) };
+    if (body.channel === "voice") {
+      await db.batch([
+        db.insert(messages).values({ id: messageId, leadId: body.leadId, direction: "outbound", channel: body.channel, body: body.body ?? "AI consultation call", providerMessageId, status: "queued", campaign: "initial_outreach", sentAt: now }),
+        db.update(leads).set({ ...contactDetails, stage: "contacted", lastContactAt: now, nextActionAt: null, updatedAt: now }).where(eq(leads.id, body.leadId)),
+        db.insert(events).values({ id: id("evt"), eventType: "call_queued", entityType: "lead", entityId: body.leadId, payload: JSON.stringify({ channel: body.channel, providerMessageId }) }),
+      ]);
+      return Response.json({ messageId, providerMessageId, status: "queued", followupsScheduled: [] });
+    }
     await db.batch([
-      db.insert(messages).values({ id: messageId, leadId: body.leadId, direction: "outbound", channel: body.channel, body: body.body ?? `[template:${body.template}]`, providerMessageId, status: "sent", campaign: "initial_outreach", sentAt: new Date().toISOString() }),
-      db.update(leads).set({ stage: "contacted", lastContactAt: new Date().toISOString(), nextActionAt: addDays(3), updatedAt: new Date().toISOString() }).where(eq(leads.id, body.leadId)),
+      db.insert(messages).values({ id: messageId, leadId: body.leadId, direction: "outbound", channel: body.channel, body: body.body ?? "", providerMessageId, status: "sent", campaign: "initial_outreach", sentAt: now }),
+      db.update(leads).set({ ...contactDetails, stage: "contacted", lastContactAt: now, nextActionAt: addDays(3), updatedAt: now }).where(eq(leads.id, body.leadId)),
       db.insert(followupJobs).values({ id: id("job"), leadId: body.leadId, channel: body.channel, step: 1, runAt: addDays(3), idempotencyKey: `${body.leadId}:${body.channel}:followup:3d` }),
       db.insert(followupJobs).values({ id: id("job"), leadId: body.leadId, channel: body.channel, step: 2, runAt: addDays(7), idempotencyKey: `${body.leadId}:${body.channel}:followup:7d` }),
       db.insert(events).values({ id: id("evt"), eventType: "message_sent", entityType: "lead", entityId: body.leadId, payload: JSON.stringify({ channel: body.channel, providerMessageId }) }),
