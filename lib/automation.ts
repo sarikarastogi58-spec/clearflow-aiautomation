@@ -4,7 +4,7 @@ export type LeadInput = {
   websiteUrl?: string | null;
   websiteStatus?: "none" | "broken" | "weak" | "good";
   hasBooking?: boolean;
-  hasWhatsApp?: boolean;
+  hasEnquiryCta?: boolean;
   hasHttps?: boolean;
   phone?: string;
   email?: string;
@@ -39,7 +39,7 @@ export function scoreLead(input: LeadInput) {
 
   let digitalGapScore = 0;
   if (!input.hasBooking) { digitalGapScore += 7; gaps.push("No online booking flow found"); }
-  if (!input.hasWhatsApp) { digitalGapScore += 6; gaps.push("No WhatsApp enquiry CTA found"); }
+  if (!input.hasEnquiryCta) { digitalGapScore += 6; gaps.push("No clear enquiry CTA found"); }
   if (websiteNeed >= 18) digitalGapScore += 2;
   digitalGapScore = Math.min(15, digitalGapScore);
 

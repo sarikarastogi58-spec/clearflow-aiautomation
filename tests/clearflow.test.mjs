@@ -21,13 +21,16 @@ test("ClearFlow product shell exposes the required operating surfaces", async ()
 test("outreach and inbound routes enforce consent and opt-out controls", async () => {
   const [outreach, webhook, automation, inbound] = await Promise.all([
     readFile(new URL("../app/api/outreach/route.ts", import.meta.url), "utf8"),
-    readFile(new URL("../app/api/webhooks/whatsapp/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/webhooks/sms/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/automation.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/inbound.ts", import.meta.url), "utf8"),
   ]);
   assert.match(outreach, /CONSENT_REQUIRED/);
   assert.match(outreach, /CONTACT_SUPPRESSED/);
-  assert.match(outreach, /APPROVED_TEMPLATE_REQUIRED/);
+  assert.match(outreach, /CONTACT_RATE_LIMITED/);
+  assert.match(outreach, /fetchWithRetry/);
+  assert.match(outreach, /MSG91_TEMPLATE_ID/);
+  assert.match(outreach, /api\/v5\/flow/);
   assert.match(outreach, /sendSms/);
   assert.match(outreach, /sendEmail/);
   assert.match(webhook, /recordInbound/);
@@ -35,6 +38,18 @@ test("outreach and inbound routes enforce consent and opt-out controls", async (
   assert.match(inbound, /isOptOut/);
   assert.match(automation, /band\\s\*karo/);
   assert.match(automation, /message\\s\*mat\\s\*karo/);
+});
+
+test("Apify discovery applies quality, website, closure, and chain filters", async () => {
+  const discovery = await readFile(new URL("../app/api/discovery/route.ts", import.meta.url), "utf8");
+  assert.match(discovery, /APIFY_API_TOKEN/);
+  assert.match(discovery, /compass~crawler-google-places/);
+  assert.match(discovery, /run-sync-get-dataset-items/);
+  assert.match(discovery, /minRating/);
+  assert.match(discovery, /minReviews/);
+  assert.match(discovery, /websiteFilter/);
+  assert.match(discovery, /permanentlyClosed/);
+  assert.match(discovery, /bigChains/);
 });
 
 test("provider configuration uses encrypted storage and never returns credentials", async () => {
@@ -50,5 +65,8 @@ test("provider configuration uses encrypted storage and never returns credential
   assert.match(secrets, /VAULT_MASTER_KEY/);
   assert.match(dashboard, /Test & connect/);
   assert.match(dashboard, /Saved credentials are hidden/);
+  assert.match(dashboard, /Discover with Apify/);
+  assert.match(dashboard, /MSG91 SMS/);
+  assert.doesNotMatch(dashboard, /Google Places API key|WhatsApp Business/);
   assert.doesNotMatch(route, /return Response\.json\(\{[^}]*values/);
 });

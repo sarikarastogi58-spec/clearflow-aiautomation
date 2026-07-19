@@ -1,4 +1,4 @@
-export type ProviderId = "openai" | "google" | "whatsapp" | "twilio" | "resend";
+export type ProviderId = "openai" | "apify" | "msg91" | "resend" | "twilio";
 
 export type ProviderDefinition = {
   id: ProviderId;
@@ -9,19 +9,21 @@ export type ProviderDefinition = {
 
 export const providerDefinitions: Record<ProviderId, ProviderDefinition> = {
   openai: { id: "openai", name: "OpenAI", required: ["OPENAI_API_KEY"], optional: ["OPENAI_MODEL"] },
-  google: { id: "google", name: "Google Places", required: ["GOOGLE_PLACES_API_KEY"], optional: [] },
-  whatsapp: {
-    id: "whatsapp", name: "WhatsApp Business",
-    required: ["WHATSAPP_ACCESS_TOKEN", "WHATSAPP_PHONE_NUMBER_ID"],
-    optional: ["WHATSAPP_VERIFY_TOKEN", "WHATSAPP_APP_SECRET"],
+  apify: {
+    id: "apify", name: "Apify",
+    required: ["APIFY_API_TOKEN"], optional: ["APIFY_ACTOR_ID"],
   },
-  twilio: {
-    id: "twilio", name: "Twilio SMS + Voice",
-    required: ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_SMS_FROM"], optional: [],
+  msg91: {
+    id: "msg91", name: "MSG91 SMS",
+    required: ["MSG91_AUTH_KEY", "MSG91_TEMPLATE_ID"], optional: ["MSG91_MESSAGE_VARIABLE", "MSG91_WEBHOOK_TOKEN"],
   },
   resend: {
     id: "resend", name: "Resend Email",
     required: ["RESEND_API_KEY", "EMAIL_FROM"], optional: ["EMAIL_WEBHOOK_SECRET"],
+  },
+  twilio: {
+    id: "twilio", name: "Twilio Voice",
+    required: ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"], optional: ["TWILIO_VOICE_FROM"],
   },
 };
 

@@ -28,23 +28,22 @@ async function testProvider(provider: ProviderId, values: Record<string, string 
   let response: Response;
   if (provider === "openai") {
     response = await fetch("https://api.openai.com/v1/models", { headers: { Authorization: `Bearer ${values.OPENAI_API_KEY}` } });
-  } else if (provider === "google") {
-    response = await fetch("https://places.googleapis.com/v1/places:searchText", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Goog-Api-Key": String(values.GOOGLE_PLACES_API_KEY), "X-Goog-FieldMask": "places.id" },
-      body: JSON.stringify({ textQuery: "restaurant in Pune", maxResultCount: 1, regionCode: "IN" }),
+  } else if (provider === "apify") {
+    response = await fetch("https://api.apify.com/v2/users/me", {
+      headers: { Authorization: `Bearer ${values.APIFY_API_TOKEN}` },
     });
-  } else if (provider === "whatsapp") {
-    response = await fetch(`https://graph.facebook.com/v23.0/${encodeURIComponent(String(values.WHATSAPP_PHONE_NUMBER_ID))}?fields=id,display_phone_number`, {
-      headers: { Authorization: `Bearer ${values.WHATSAPP_ACCESS_TOKEN}` },
-    });
+  } else if (provider === "msg91") {
+    const authKey = encodeURIComponent(String(values.MSG91_AUTH_KEY));
+    response = await fetch(`https://api.msg91.com/api/balance.php?authkey=${authKey}&type=4`);
   } else if (provider === "twilio") {
     const credentials = btoa(`${values.TWILIO_ACCOUNT_SID}:${values.TWILIO_AUTH_TOKEN}`);
     response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(String(values.TWILIO_ACCOUNT_SID))}.json`, {
       headers: { Authorization: `Basic ${credentials}` },
     });
-  } else {
+  } else if (provider === "resend") {
     response = await fetch("https://api.resend.com/domains", { headers: { Authorization: `Bearer ${values.RESEND_API_KEY}` } });
+  } else {
+    throw new Error("Unsupported provider");
   }
 
   if (!response.ok) {

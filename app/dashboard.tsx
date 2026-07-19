@@ -6,9 +6,14 @@ type Lead = {
   id: string; name: string; category: string; city: string; rating: number;
   reviewCount: number; score: number; priority: string; stage: string;
   gaps?: string[]; pitchAngle?: string; phone?: string; websiteUrl?: string | null;
+  address?: string; placeId?: string; mapsUrl?: string;
 };
 
-type ProviderId = "openai" | "google" | "whatsapp" | "twilio" | "resend";
+type DiscoveredPlace = Omit<Lead, "id" | "score" | "priority" | "stage"> & {
+  placeId: string; source: "apify"; websiteStatus: "none" | "weak"; preferred: boolean;
+};
+
+type ProviderId = "openai" | "apify" | "msg91" | "resend" | "twilio";
 type ConnectionState = { id: ProviderId; connected: boolean; configured: boolean; lastTestedAt: string | null; lastError: string | null };
 type ConnectionField = { key: string; label: string; required?: boolean; hint?: string; type?: "password" | "text" | "email" };
 type ConnectionOption = { id: ProviderId; icon: string; name: string; use: string; required: boolean; helpUrl: string; fields: ConnectionField[] };
@@ -18,32 +23,33 @@ const connectionOptions: ConnectionOption[] = [
     { key: "OPENAI_API_KEY", label: "OpenAI API key", required: true, hint: "Create a fresh project key. The earlier key shared in chat should remain revoked." },
     { key: "OPENAI_MODEL", label: "Model", type: "text", hint: "Optional. Defaults to gpt-5-mini." },
   ] },
-  { id: "google", icon: "G", name: "Google Places", use: "Local business discovery from Google Maps", required: true, helpUrl: "https://console.cloud.google.com/google/maps-apis/credentials", fields: [
-    { key: "GOOGLE_PLACES_API_KEY", label: "Google Places API key", required: true, hint: "Enable Places API (New) for this key." },
+  { id: "apify", icon: "AP", name: "Apify", use: "Multi-city local business discovery", required: true, helpUrl: "https://console.apify.com/account/integrations", fields: [
+    { key: "APIFY_API_TOKEN", label: "Apify API token", required: true, hint: "Use a personal API token from Apify Integrations." },
+    { key: "APIFY_ACTOR_ID", label: "Google Places actor ID", type: "text", hint: "Optional. Defaults to compass~crawler-google-places." },
   ] },
-  { id: "whatsapp", icon: "WA", name: "WhatsApp Business", use: "Customer support and approved outreach", required: false, helpUrl: "https://developers.facebook.com/apps/", fields: [
-    { key: "WHATSAPP_ACCESS_TOKEN", label: "Permanent access token", required: true },
-    { key: "WHATSAPP_PHONE_NUMBER_ID", label: "Phone number ID", required: true, type: "text" },
-    { key: "WHATSAPP_VERIFY_TOKEN", label: "Webhook verify token", hint: "A private phrase you choose for webhook verification." },
-    { key: "WHATSAPP_APP_SECRET", label: "Meta app secret" },
+  { id: "msg91", icon: "SMS", name: "MSG91 SMS", use: "DLT-compliant Indian SMS outreach", required: true, helpUrl: "https://control.msg91.com/app/", fields: [
+    { key: "MSG91_AUTH_KEY", label: "MSG91 auth key", required: true },
+    { key: "MSG91_TEMPLATE_ID", label: "Approved Flow template ID", required: true, type: "text", hint: "Use an approved MSG91 Flow template mapped to your DLT content." },
+    { key: "MSG91_MESSAGE_VARIABLE", label: "Message variable", type: "text", hint: "Optional. Defaults to MESSAGE; match the variable in your Flow template." },
+    { key: "MSG91_WEBHOOK_TOKEN", label: "Inbound webhook token", hint: "Optional private token used to authenticate SMS callbacks." },
   ] },
-  { id: "twilio", icon: "SMS", name: "Twilio SMS + Voice", use: "DLT-approved SMS and AI call support", required: false, helpUrl: "https://console.twilio.com/", fields: [
+  { id: "resend", icon: "@", name: "Resend Email", use: "Support and consent-compliant email", required: true, helpUrl: "https://resend.com/api-keys", fields: [
+    { key: "RESEND_API_KEY", label: "Resend API key", required: true },
+    { key: "EMAIL_FROM", label: "Verified sender", required: true, type: "text", hint: "Example: Clear Web Solutions <hello@yourdomain.com>" },
+    { key: "EMAIL_WEBHOOK_SECRET", label: "Inbound webhook secret" },
+  ] },
+  { id: "twilio", icon: "TEL", name: "Twilio Voice", use: "Optional AI call support", required: false, helpUrl: "https://console.twilio.com/", fields: [
     { key: "TWILIO_ACCOUNT_SID", label: "Account SID", required: true, type: "text" },
     { key: "TWILIO_AUTH_TOKEN", label: "Auth token", required: true },
-    { key: "TWILIO_SMS_FROM", label: "SMS sender / number", required: true, type: "text", hint: "Use an approved Indian DLT sender where applicable." },
-  ] },
-  { id: "resend", icon: "✉", name: "Resend Email", use: "Support and consent-compliant email", required: false, helpUrl: "https://resend.com/api-keys", fields: [
-    { key: "RESEND_API_KEY", label: "Resend API key", required: true },
-    { key: "EMAIL_FROM", label: "Verified sender", required: true, type: "email", hint: "Example: Clear Web Solutions <hello@yourdomain.com>" },
-    { key: "EMAIL_WEBHOOK_SECRET", label: "Inbound webhook secret" },
+    { key: "TWILIO_VOICE_FROM", label: "Voice number", type: "text", hint: "Optional Twilio number used for voice support." },
   ] },
 ];
 
 const demoLeads: Lead[] = [
-  { id: "demo-1", name: "The Pepper Table", category: "Restaurant", city: "Pune", rating: 4.6, reviewCount: 428, score: 89, priority: "high", stage: "warm", gaps: ["No online booking flow", "No WhatsApp CTA"], pitchAngle: "Turn strong local interest into direct table bookings." },
+  { id: "demo-1", name: "The Pepper Table", category: "Restaurant", city: "Pune", rating: 4.6, reviewCount: 428, score: 89, priority: "high", stage: "warm", gaps: ["No online booking flow", "No direct enquiry CTA"], pitchAngle: "Turn strong local interest into direct table bookings." },
   { id: "demo-2", name: "Namma Filter Coffee", category: "Café", city: "Bengaluru", rating: 4.5, reviewCount: 216, score: 82, priority: "high", stage: "contacted", gaps: ["No business website linked"], pitchAngle: "Create a fast menu-first website for local discovery." },
   { id: "demo-3", name: "Glow & Go Studio", category: "Salon", city: "Mumbai", rating: 4.4, reviewCount: 173, score: 74, priority: "medium", stage: "researched", gaps: ["Website needs a clearer conversion path"], pitchAngle: "Simplify service discovery and appointment enquiries." },
-  { id: "demo-4", name: "CoreFit Arena", category: "Gym", city: "Hyderabad", rating: 4.2, reviewCount: 119, score: 68, priority: "medium", stage: "replied", gaps: ["No WhatsApp enquiry CTA found"], pitchAngle: "Convert profile visits into trial-session enquiries." },
+  { id: "demo-4", name: "CoreFit Arena", category: "Gym", city: "Hyderabad", rating: 4.2, reviewCount: 119, score: 68, priority: "medium", stage: "replied", gaps: ["No clear enquiry CTA found"], pitchAngle: "Convert profile visits into trial-session enquiries." },
   { id: "demo-5", name: "Dr. Mehta Dental", category: "Clinic", city: "Ahmedabad", rating: 4.7, reviewCount: 91, score: 61, priority: "medium", stage: "researched", gaps: ["No online booking flow found"], pitchAngle: "Make patient appointment requests easier." },
 ];
 
@@ -59,6 +65,7 @@ export function Dashboard() {
   const [metrics, setMetrics] = useState(demoMetrics);
   const [demo, setDemo] = useState(true);
   const [modal, setModal] = useState(false);
+  const [discoverModal, setDiscoverModal] = useState(false);
   const [toast, setToast] = useState("");
   const [query, setQuery] = useState("");
   const [priority, setPriority] = useState("all");
@@ -88,7 +95,7 @@ export function Dashboard() {
         <div className="brand"><span className="brand-mark">C</span><div><b>ClearFlow</b><small>by Clear Web Solutions</small></div></div>
         <nav>{nav.map(([id, icon, label]) => <button key={id} className={section === id ? "active" : ""} onClick={() => setSection(id)}><span>{icon}</span>{label}</button>)}</nav>
         <div className="sidebar-bottom">
-          <div className="ai-status"><i></i><div><b>AI agent online</b><small>4 channels monitored</small></div></div>
+          <div className="ai-status"><i></i><div><b>AI agent online</b><small>Chat, email and SMS</small></div></div>
           <div className="profile"><span>AK</span><div><b>Agency Admin</b><small>Clear Web Solutions</small></div><em>•••</em></div>
         </div>
       </aside>
@@ -101,7 +108,7 @@ export function Dashboard() {
         </header>
 
         {section === "overview" && <Overview metrics={metrics} leads={leads} demo={demo} openLeads={() => setSection("leads")} />}
-        {section === "leads" && <LeadCRM leads={filtered} query={query} setQuery={setQuery} priority={priority} setPriority={setPriority} onAdd={() => setModal(true)} />}
+        {section === "leads" && <LeadCRM leads={filtered} query={query} setQuery={setQuery} priority={priority} setPriority={setPriority} onAdd={() => setModal(true)} onDiscover={() => setDiscoverModal(true)} />}
         {section === "inbox" && <AIInbox flash={flash} />}
         {section === "campaigns" && <Campaigns flash={flash} />}
         {section === "settings" && <Connections flash={flash} />}
@@ -109,6 +116,7 @@ export function Dashboard() {
         <nav className="mobile-nav">{nav.slice(0, 4).map(([id, icon, label]) => <button key={id} className={section === id ? "active" : ""} onClick={() => setSection(id)}><span>{icon}</span>{label}</button>)}</nav>
       </main>
       {modal && <AddLeadModal close={() => setModal(false)} onCreated={(lead) => { setLeads((current) => [lead, ...current]); setModal(false); flash("Lead scored and added to CRM"); }} flash={flash} />}
+      {discoverModal && <DiscoveryModal close={() => setDiscoverModal(false)} onImported={(imported) => { setLeads((current) => [...imported, ...(demo ? [] : current)]); setDemo(false); setDiscoverModal(false); flash(`${imported.length} Apify leads scored and added to CRM`); }} flash={flash} />}
       {toast && <div className="toast">✓ {toast}</div>}
     </div>
   );
@@ -129,7 +137,7 @@ function Overview({ metrics, leads, demo, openLeads }: { metrics: typeof demoMet
         <div className="legend"><span><i className="orange"></i>Qualified leads</span><span><i></i>Replies</span><b>{metrics.conversionRate}% conversion</b></div>
       </section>
       <section className="panel activity"><PanelTitle title="Live activity" sub="AI agent events" action="See all" />
-        <div className="activity-list"><Activity icon="↩" color="green" title="New reply from The Pepper Table" detail="Asked about restaurant website pricing" time="2m" /><Activity icon="✦" color="purple" title="Lead qualified at 89/100" detail="Namma Filter Coffee · Bengaluru" time="18m" /><Activity icon="✓" color="blue" title="Follow-up delivered" detail="Glow & Go Studio · WhatsApp" time="42m" /><Activity icon="◎" color="orange" title="12 leads discovered" detail="Restaurants in Pune" time="1h" /></div>
+        <div className="activity-list"><Activity icon="↩" color="green" title="New reply from The Pepper Table" detail="Asked about restaurant website pricing" time="2m" /><Activity icon="✦" color="purple" title="Lead qualified at 89/100" detail="Namma Filter Coffee · Bengaluru" time="18m" /><Activity icon="✓" color="blue" title="Follow-up delivered" detail="Glow & Go Studio · SMS" time="42m" /><Activity icon="◎" color="orange" title="12 leads discovered" detail="Restaurants in Pune · Apify" time="1h" /></div>
       </section>
     </div>
     <section className="panel lead-table-panel"><PanelTitle title="Priority opportunities" sub="Highest-scoring leads to work next" action="Open CRM" onAction={openLeads} /><LeadTable leads={leads.slice(0, 5)} /></section>
@@ -144,8 +152,8 @@ function Activity({ icon, color, title, detail, time }: { icon: string; color: s
   return <div className="activity-item"><span className={color}>{icon}</span><div><b>{title}</b><p>{detail}</p></div><small>{time}</small></div>;
 }
 
-function LeadCRM({ leads, query, setQuery, priority, setPriority, onAdd }: { leads: Lead[]; query: string; setQuery: (s: string) => void; priority: string; setPriority: (s: string) => void; onAdd: () => void }) {
-  return <div className="content"><section className="page-intro"><div><span>SMART CRM</span><h2>Every opportunity, clearly prioritized.</h2><p>Scores are evidence-based. Outreach stays locked until consent is recorded.</p></div><button className="primary" onClick={onAdd}>＋ New lead</button></section>
+function LeadCRM({ leads, query, setQuery, priority, setPriority, onAdd, onDiscover }: { leads: Lead[]; query: string; setQuery: (s: string) => void; priority: string; setPriority: (s: string) => void; onAdd: () => void; onDiscover: () => void }) {
+  return <div className="content"><section className="page-intro"><div><span>SMART CRM</span><h2>Every opportunity, clearly prioritized.</h2><p>Scores are evidence-based. Outreach stays locked until consent is recorded.</p></div><div className="intro-actions"><button onClick={onDiscover}>◎ Discover with Apify</button><button className="primary" onClick={onAdd}>＋ New lead</button></div></section>
     <section className="pipeline-summary"><div><small>RESEARCHED</small><b>34</b><i></i></div><div><small>CONTACTED</small><b>21</b><i></i></div><div><small>WARM</small><b>11</b><i></i></div><div><small>BOOKED</small><b>6</b><i></i></div><div><small>WON</small><b>7</b><i></i></div></section>
     <section className="panel lead-table-panel"><div className="filters"><label>⌕<input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search businesses, cities…" /></label><div>{["all", "high", "medium", "low"].map((item) => <button key={item} className={priority === item ? "active" : ""} onClick={() => setPriority(item)}>{item}</button>)}</div><button className="filter-button">☷ More filters</button></div><LeadTable leads={leads} detailed /></section>
   </div>;
@@ -163,7 +171,7 @@ function AIInbox({ flash }: { flash: (s: string) => void }) {
     catch (error) { flash(error instanceof Error ? error.message : "AI connection unavailable"); } finally { setSending(false); }
   }
   return <div className="content inbox-page"><section className="inbox-list panel"><div className="inbox-head"><div><h3>Conversations</h3><p>4 need attention</p></div><button>⌕</button></div>{["The Pepper Table", "Namma Filter Coffee", "Glow & Go Studio", "CoreFit Arena"].map((name, i) => <button className={`conversation ${i === 0 ? "active" : ""}`} key={name}><span>{name[0]}</span><div><b>{name}</b><p>{i === 0 ? "Restaurant ke liye website…" : "Thanks, can you share…"}</p></div><small>{i ? `${i + 1}h` : "2m"}</small>{i < 2 && <i>{i + 1}</i>}</button>)}</section>
-    <section className="chat panel"><div className="chat-head"><div className="business-cell"><span>T</span><div><b>The Pepper Table</b><small><i></i> WhatsApp · Pune</small></div></div><div><button>☎</button><button>Human handoff</button></div></div><div className="ai-note">✦ AI is replying in Hinglish using approved service information.</div><div className="messages">{messages.map((message, i) => <div className={`message ${message.from}`} key={i}><p>{message.text}</p><small>{message.from === "ai" && "✦ AI · "}{message.time}</small></div>)}{sending && <div className="typing">AI is typing <i></i><i></i><i></i></div>}</div><form className="composer" onSubmit={send}><button type="button">＋</button><input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Type a message to test the assistant…" /><button type="submit">Send ↗</button></form></section>
+    <section className="chat panel"><div className="chat-head"><div className="business-cell"><span>T</span><div><b>The Pepper Table</b><small><i></i> Website chat · Pune</small></div></div><div><button>☎</button><button>Human handoff</button></div></div><div className="ai-note">✦ AI is replying in Hinglish using approved service information.</div><div className="messages">{messages.map((message, i) => <div className={`message ${message.from}`} key={i}><p>{message.text}</p><small>{message.from === "ai" && "✦ AI · "}{message.time}</small></div>)}{sending && <div className="typing">AI is typing <i></i><i></i><i></i></div>}</div><form className="composer" onSubmit={send}><button type="button">＋</button><input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Type a message to test the assistant…" /><button type="submit">Send ↗</button></form></section>
     <aside className="contact-card panel"><div className="contact-cover"><span>T</span></div><h3>The Pepper Table</h3><p>Restaurant · Pune</p><div className="mini-score"><b>89</b><div><strong>High priority</strong><small>Website need: 30/35</small></div></div><dl><dt>Contact</dt><dd>+91 98••• ••210</dd><dt>Budget</dt><dd>₹10,000–₹15,000</dd><dt>Needs</dt><dd><span>Restaurant site</span><span>WhatsApp</span></dd></dl><button>Open lead profile →</button></aside>
   </div>;
 }
@@ -171,7 +179,7 @@ function AIInbox({ flash }: { flash: (s: string) => void }) {
 function Campaigns({ flash }: { flash: (s: string) => void }) {
   return <div className="content"><section className="page-intro"><div><span>CONSENT-FIRST OUTREACH</span><h2>Campaigns that protect your reputation.</h2><p>Rate limits, quiet hours, template approvals, opt-outs, and follow-up cancellation are enforced before every send.</p></div><button className="primary" onClick={() => flash("Create campaign unlocks after messaging credentials are connected")}>＋ New campaign</button></section>
     <section className="metrics compact"><article><div className="metric-top"><span>↗</span><em>91.8%</em></div><h3>184</h3><p>Messages sent</p><small>169 delivered</small></article><article><div className="metric-top"><span>↩</span><em>23.4%</em></div><h3>43</h3><p>Replies received</p><small>healthy response</small></article><article><div className="metric-top"><span>♥</span><em>10.3%</em></div><h3>19</h3><p>Interested leads</p><small>7 consultations</small></article><article><div className="metric-top"><span>⊘</span><em>0.5%</em></div><h3>1</h3><p>Opt-outs</p><small>automatically blocked</small></article></section>
-    <section className="campaign-grid"><article className="campaign-card live"><div><span>LIVE</span><small>WhatsApp</small></div><h3>Pune Restaurant Growth</h3><p>Website opportunity · Restaurants with 100+ reviews</p><div className="campaign-progress"><span><i style={{ width: "72%" }}></i></span><b>132 / 184</b></div><dl><div><dt>Delivered</dt><dd>121</dd></div><div><dt>Replies</dt><dd>31</dd></div><div><dt>Interested</dt><dd>12</dd></div></dl><footer><small>Next send window: 10:00 IST</small><button>Manage →</button></footer></article><article className="campaign-card draft"><div><span>DRAFT</span><small>Email</small></div><h3>Bengaluru Café Audit</h3><p>Menu and direct-order opportunity · 46 eligible leads</p><div className="checklist"><p>✓ Audience filtered</p><p>✓ Evidence checked</p><p>○ Approve message copy</p></div><footer><small>0 messages sent</small><button>Review →</button></footer></article></section>
+    <section className="campaign-grid"><article className="campaign-card live"><div><span>LIVE</span><small>SMS</small></div><h3>Pune Restaurant Growth</h3><p>Website opportunity · Restaurants with 100+ reviews</p><div className="campaign-progress"><span><i style={{ width: "72%" }}></i></span><b>132 / 184</b></div><dl><div><dt>Delivered</dt><dd>121</dd></div><div><dt>Replies</dt><dd>31</dd></div><div><dt>Interested</dt><dd>12</dd></div></dl><footer><small>Next send window: 10:00 IST</small><button>Manage →</button></footer></article><article className="campaign-card draft"><div><span>DRAFT</span><small>Email</small></div><h3>Bengaluru Café Audit</h3><p>Menu and direct-order opportunity · 46 eligible leads</p><div className="checklist"><p>✓ Audience filtered</p><p>✓ Evidence checked</p><p>○ Approve message copy</p></div><footer><small>0 messages sent</small><button>Review →</button></footer></article></section>
   </div>;
 }
 
@@ -206,7 +214,7 @@ function Connections({ flash }: { flash: (s: string) => void }) {
     return () => { active = false; };
   }, []);
 
-  return <div className="content"><section className="page-intro"><div><span>CONNECTION CENTRE</span><h2>Connect your services securely.</h2><p>Open a provider, enter its credentials, and ClearFlow will verify the connection before saving.</p></div></section><div className="security-callout"><span>▣</span><div><b>Your credentials are encrypted</b><p>Secrets are sent over HTTPS, encrypted before storage, and never returned to the browser, AI context, analytics, logs, or GitHub.</p></div></div>{!vaultReady && !loading && <div className="connection-warning">Secure storage is being initialized. Please try again after the latest update finishes publishing.</div>}<section className="connections">{connectionOptions.map((item, index) => { const status = statuses[item.id]; return <article key={item.id} className={status?.connected ? "connected" : ""}><span className={`connection-icon c${index}`}>{item.icon}</span><div><h3>{item.name}</h3><p>{item.use}</p><span className={`connection-state ${status?.connected ? "is-connected" : status?.lastError ? "has-error" : ""}`}><i></i>{loading ? "Checking…" : status?.connected ? "Connected and verified" : status?.lastError ? "Needs attention" : "Not connected"}</span></div><button onClick={() => setSelected(item)} disabled={loading}>{status?.connected ? "Manage" : item.required ? "Add key" : "Configure"}</button><i className={item.required ? "required" : "optional"}>{item.required ? "Required" : "Optional"}</i></article>; })}</section><section className="panel launch-check"><PanelTitle title="Launch checklist" sub="Provider approvals need to be completed once" action="Connect OpenAI" onAction={() => setSelected(connectionOptions[0])} /><div><p><span>1</span><b>Connect required API keys</b><small>OpenAI and Google Places</small></p><p><span>2</span><b>Verify WhatsApp Business</b><small>Phone number and message templates</small></p><p><span>3</span><b>Complete India DLT registration</b><small>Required for domestic commercial SMS</small></p><p><span>4</span><b>Run test conversations</b><small>English, Hindi, Hinglish, opt-out and handoff</small></p></div></section>{selected && <ConnectionModal option={selected} status={statuses[selected.id]} close={() => setSelected(null)} saved={async () => { await refresh(); setSelected(null); flash(`${selected.name} connected successfully`); }} flash={flash} />}</div>;
+  return <div className="content"><section className="page-intro"><div><span>CONNECTION CENTRE</span><h2>Connect your services securely.</h2><p>Open a provider, enter its credentials, and ClearFlow will verify the connection before saving.</p></div></section><div className="security-callout"><span>▣</span><div><b>Your credentials are encrypted</b><p>Secrets are sent over HTTPS, encrypted before storage, and never returned to the browser, AI context, analytics, logs, or GitHub.</p></div></div>{!vaultReady && !loading && <div className="connection-warning">Secure storage is being initialized. Please try again after the latest update finishes publishing.</div>}<section className="connections">{connectionOptions.map((item, index) => { const status = statuses[item.id]; return <article key={item.id} className={status?.connected ? "connected" : ""}><span className={`connection-icon c${index}`}>{item.icon}</span><div><h3>{item.name}</h3><p>{item.use}</p><span className={`connection-state ${status?.connected ? "is-connected" : status?.lastError ? "has-error" : ""}`}><i></i>{loading ? "Checking…" : status?.connected ? "Connected and verified" : status?.lastError ? "Needs attention" : "Not connected"}</span></div><button onClick={() => setSelected(item)} disabled={loading}>{status?.connected ? "Manage" : item.required ? "Add key" : "Configure"}</button><i className={item.required ? "required" : "optional"}>{item.required ? "Required" : "Optional"}</i></article>; })}</section><section className="panel launch-check"><PanelTitle title="Launch checklist" sub="Provider approvals need to be completed once" action="Connect OpenAI" onAction={() => setSelected(connectionOptions[0])} /><div><p><span>1</span><b>Connect core API keys</b><small>OpenAI, Apify, MSG91 and Resend</small></p><p><span>2</span><b>Approve email and SMS senders</b><small>Verify domain, sender and Flow template</small></p><p><span>3</span><b>Complete India DLT registration</b><small>Required for domestic commercial SMS</small></p><p><span>4</span><b>Run safe test conversations</b><small>English, Hindi, Hinglish, opt-out and handoff</small></p></div></section>{selected && <ConnectionModal option={selected} status={statuses[selected.id]} close={() => setSelected(null)} saved={async () => { await refresh(); setSelected(null); flash(`${selected.name} connected successfully`); }} flash={flash} />}</div>;
 }
 
 function ConnectionModal({ option, status, close, saved, flash }: { option: ConnectionOption; status?: ConnectionState; close: () => void; saved: () => Promise<void>; flash: (s: string) => void }) {
@@ -238,6 +246,45 @@ function ConnectionModal({ option, status, close, saved, flash }: { option: Conn
   }
 
   return <div className="modal-backdrop" onMouseDown={close}><form className="modal connection-modal" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()} autoComplete="off"><div className="modal-head"><div><span>{status?.connected ? "MANAGE CONNECTION" : "SECURE CONNECTION"}</span><h2>{option.name}</h2><p>Credentials are verified with {option.name} before encrypted storage.</p></div><button type="button" onClick={close}>×</button></div><div className="connection-form">{status?.configured && <div className="saved-secret-note"><b>Saved credentials are hidden</b><span>Leave a field blank to keep its current value, or enter a replacement.</span></div>}{option.fields.map((field) => <label key={field.key}>{field.label}{field.required && <em>Required</em>}<input name={field.key} type={field.type ?? "password"} required={Boolean(field.required && !status?.configured)} placeholder={status?.configured ? "Saved securely — enter only to replace" : field.required ? "Enter credential" : "Optional"} autoComplete="new-password" />{field.hint && <small>{field.hint}</small>}</label>)}{error && <div className="connection-error"><b>Connection not saved</b><span>{error}</span></div>}<a href={option.helpUrl} target="_blank" rel="noreferrer">Open {option.name} setup ↗</a></div><footer>{status?.connected && <button type="button" className="danger" onClick={disconnect} disabled={saving}>Disconnect</button>}<button type="button" onClick={close}>Cancel</button><button className="primary" disabled={saving}>{saving ? "Testing securely…" : status?.connected ? "Test & update" : "Test & connect"}</button></footer></form></div>;
+}
+
+function DiscoveryModal({ close, onImported, flash }: { close: () => void; onImported: (leads: Lead[]) => void; flash: (s: string) => void }) {
+  const [searching, setSearching] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [results, setResults] = useState<DiscoveredPlace[]>([]);
+  const [notice, setNotice] = useState("Find independent businesses with strong reviews and no linked website.");
+
+  async function search(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setSearching(true); setResults([]);
+    const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+    try {
+      const response = await fetch("/api/discovery", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const data = await response.json() as { places?: DiscoveredPlace[]; storageNotice?: string; error?: string; setupRequired?: boolean };
+      if (!response.ok) throw new Error(data.setupRequired ? "Connect Apify in Connections before discovering leads." : data.error ?? "Discovery failed");
+      setResults(data.places ?? []); setNotice(data.storageNotice ?? "Review the results before importing.");
+      if (!data.places?.length) flash("No businesses matched these filters");
+    } catch (error) { flash(error instanceof Error ? error.message : "Discovery failed"); }
+    finally { setSearching(false); }
+  }
+
+  async function importAll() {
+    setImporting(true);
+    const imported: Lead[] = []; let skipped = 0;
+    for (const place of results) {
+      try {
+        const response = await fetch("/api/leads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(place) });
+        const data = await response.json() as { lead?: Lead; error?: string };
+        if (!response.ok || !data.lead) { skipped += 1; continue; }
+        imported.push({ ...place, ...data.lead, category: place.category, rating: place.rating, reviewCount: place.reviewCount, stage: "researched" });
+      } catch { skipped += 1; }
+    }
+    setImporting(false);
+    if (!imported.length) { flash(skipped ? "These businesses are already in the CRM or could not be imported" : "Nothing to import"); return; }
+    if (skipped) flash(`${skipped} duplicate or invalid leads skipped`);
+    onImported(imported);
+  }
+
+  return <div className="modal-backdrop" onMouseDown={close}><form className="modal discovery-modal" onSubmit={search} onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><span>APIFY DISCOVERY</span><h2>Find local business leads</h2><p>Search a city, apply quality filters, then score and import the results.</p></div><button type="button" onClick={close}>×</button></div><div className="form-grid"><label>City<input name="city" required defaultValue="Pune" placeholder="Pune" /></label><label>Business type<select name="category" defaultValue="restaurant"><option value="restaurant">Restaurants</option><option value="cafe">Cafés</option><option value="salon">Salons</option><option value="gym">Gyms</option><option value="clinic">Clinics</option><option value="local business">Other local businesses</option></select></label><label>Maximum results<input name="maxResults" type="number" min="1" max="100" defaultValue="25" /></label><label>Minimum rating<input name="minRating" type="number" min="0" max="5" step="0.1" defaultValue="4" /></label><label>Minimum reviews<input name="minReviews" type="number" min="0" defaultValue="100" /></label><label>Website filter<select name="websiteFilter" defaultValue="missing"><option value="missing">No website linked</option><option value="any">Any website status</option></select></label></div>{results.length > 0 && <div className="discovery-results"><div><b>{results.length} qualified businesses found</b><small>{notice}</small></div><div className="discovery-list">{results.map((place) => <article key={place.placeId}><span>{place.name.slice(0, 1)}</span><div><b>{place.name}</b><small>{place.category} · {place.address || place.city}</small></div><em>★ {place.rating} · {place.reviewCount}</em><i>{place.websiteUrl ? "Website linked" : "No website"}</i></article>)}</div></div>}<div className="modal-note">Apify usage may incur charges. Verify listing data and consent before any email or SMS outreach.</div><footer><button type="button" onClick={close}>Cancel</button>{results.length > 0 && <button type="button" className="primary" onClick={importAll} disabled={importing}>{importing ? "Importing and scoring…" : `Import all ${results.length}`}</button>}<button className="primary" disabled={searching}>{searching ? "Searching Apify…" : results.length ? "Search again" : "Find leads"}</button></footer></form></div>;
 }
 
 function AddLeadModal({ close, onCreated, flash }: { close: () => void; onCreated: (lead: Lead) => void; flash: (s: string) => void }) {
