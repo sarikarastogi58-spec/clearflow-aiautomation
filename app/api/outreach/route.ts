@@ -2,11 +2,11 @@ import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { consents, events, followupJobs, leads, messages, suppressions } from "../../../db/schema";
 import { addDays, id } from "../../../lib/automation";
-import { secret } from "../../../lib/secrets";
+import { resolveSecret } from "../../../lib/secrets";
 
 async function sendWhatsApp(to: string, template: string, businessName: string) {
-  const token = secret("WHATSAPP_ACCESS_TOKEN");
-  const phoneId = secret("WHATSAPP_PHONE_NUMBER_ID");
+  const token = await resolveSecret("WHATSAPP_ACCESS_TOKEN");
+  const phoneId = await resolveSecret("WHATSAPP_PHONE_NUMBER_ID");
   if (!token || !phoneId) throw new Error("WhatsApp credentials are not configured");
   const response = await fetch(`https://graph.facebook.com/v23.0/${phoneId}/messages`, {
     method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -20,9 +20,9 @@ async function sendWhatsApp(to: string, template: string, businessName: string) 
 }
 
 async function sendSms(to: string, body: string) {
-  const sid = secret("TWILIO_ACCOUNT_SID");
-  const token = secret("TWILIO_AUTH_TOKEN");
-  const from = secret("TWILIO_SMS_FROM");
+  const sid = await resolveSecret("TWILIO_ACCOUNT_SID");
+  const token = await resolveSecret("TWILIO_AUTH_TOKEN");
+  const from = await resolveSecret("TWILIO_SMS_FROM");
   if (!sid || !token || !from) throw new Error("Twilio SMS credentials are not configured");
   const form = new URLSearchParams({ To: to, From: from, Body: body });
   const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
@@ -34,8 +34,8 @@ async function sendSms(to: string, body: string) {
 }
 
 async function sendEmail(to: string, subject: string, body: string, idempotencyKey: string) {
-  const apiKey = secret("RESEND_API_KEY");
-  const from = secret("EMAIL_FROM");
+  const apiKey = await resolveSecret("RESEND_API_KEY");
+  const from = await resolveSecret("EMAIL_FROM");
   if (!apiKey || !from) throw new Error("Email credentials are not configured");
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },

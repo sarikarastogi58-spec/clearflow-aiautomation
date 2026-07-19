@@ -1,11 +1,12 @@
 import { and, eq, lte, or } from "drizzle-orm";
 import { getDb } from "../../../../db";
 import { followupJobs, messages, suppressions } from "../../../../db/schema";
-import { secret } from "../../../../lib/secrets";
+import { resolveSecret } from "../../../../lib/secrets";
 
 export async function POST(request: Request) {
   const authorization = request.headers.get("authorization");
-  if (!secret("CRON_SECRET") || authorization !== `Bearer ${secret("CRON_SECRET")}`) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const cronSecret = await resolveSecret("CRON_SECRET");
+  if (!cronSecret || authorization !== `Bearer ${cronSecret}`) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const db = getDb();
   const due = await db.select().from(followupJobs).where(and(or(eq(followupJobs.status, "scheduled"), eq(followupJobs.status, "retry")), lte(followupJobs.runAt, new Date().toISOString()))).limit(50);
   let eligible = 0;

@@ -1,12 +1,12 @@
 import { recordInbound } from "../../../../lib/inbound";
-import { secret } from "../../../../lib/secrets";
+import { resolveSecret } from "../../../../lib/secrets";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const mode = url.searchParams.get("hub.mode");
   const token = url.searchParams.get("hub.verify_token");
   const challenge = url.searchParams.get("hub.challenge");
-  if (mode === "subscribe" && token && token === secret("WHATSAPP_VERIFY_TOKEN")) return new Response(challenge ?? "", { status: 200 });
+  if (mode === "subscribe" && token && token === await resolveSecret("WHATSAPP_VERIFY_TOKEN")) return new Response(challenge ?? "", { status: 200 });
   return new Response("Verification failed", { status: 403 });
 }
 

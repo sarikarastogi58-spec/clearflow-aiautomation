@@ -1,8 +1,8 @@
 import { recordInbound } from "../../../../lib/inbound";
-import { secret } from "../../../../lib/secrets";
+import { resolveSecret } from "../../../../lib/secrets";
 
 export async function POST(request: Request) {
-  if (request.headers.get("x-clearflow-webhook-secret") !== secret("EMAIL_WEBHOOK_SECRET")) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  if (request.headers.get("x-clearflow-webhook-secret") !== await resolveSecret("EMAIL_WEBHOOK_SECRET")) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const payload = await request.json() as { from?: string; text?: string; subject?: string; id?: string; data?: { from?: string; text?: string; subject?: string; id?: string } };
   const data = payload.data ?? payload;
   const body = [data.subject, data.text].filter(Boolean).join("\n\n");

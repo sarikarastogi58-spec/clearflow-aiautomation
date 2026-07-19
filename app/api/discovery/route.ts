@@ -1,9 +1,9 @@
-import { secret } from "../../../lib/secrets";
+import { resolveSecret } from "../../../lib/secrets";
 
 export async function POST(request: Request) {
   const { city, category = "restaurant", pageToken } = await request.json() as { city?: string; category?: string; pageToken?: string };
   if (!city) return Response.json({ error: "city is required" }, { status: 400 });
-  const apiKey = secret("GOOGLE_PLACES_API_KEY");
+  const apiKey = await resolveSecret("GOOGLE_PLACES_API_KEY");
   if (!apiKey) return Response.json({ error: "GOOGLE_PLACES_API_KEY is not configured", setupRequired: true }, { status: 503 });
   const response = await fetch("https://places.googleapis.com/v1/places:searchText", {
     method: "POST",

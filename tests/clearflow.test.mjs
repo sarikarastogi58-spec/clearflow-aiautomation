@@ -36,3 +36,19 @@ test("outreach and inbound routes enforce consent and opt-out controls", async (
   assert.match(automation, /band\\s\*karo/);
   assert.match(automation, /message\\s\*mat\\s\*karo/);
 });
+
+test("provider configuration uses encrypted storage and never returns credentials", async () => {
+  const [route, secrets, dashboard] = await Promise.all([
+    readFile(new URL("../app/api/connections/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/secrets.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/dashboard.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(route, /testProvider/);
+  assert.match(route, /Cross-origin configuration is blocked/);
+  assert.match(route, /encryptSecret/);
+  assert.match(secrets, /AES-GCM/);
+  assert.match(secrets, /VAULT_MASTER_KEY/);
+  assert.match(dashboard, /Test & connect/);
+  assert.match(dashboard, /Saved credentials are hidden/);
+  assert.doesNotMatch(route, /return Response\.json\(\{[^}]*values/);
+});

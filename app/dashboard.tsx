@@ -8,6 +8,37 @@ type Lead = {
   gaps?: string[]; pitchAngle?: string; phone?: string; websiteUrl?: string | null;
 };
 
+type ProviderId = "openai" | "google" | "whatsapp" | "twilio" | "resend";
+type ConnectionState = { id: ProviderId; connected: boolean; configured: boolean; lastTestedAt: string | null; lastError: string | null };
+type ConnectionField = { key: string; label: string; required?: boolean; hint?: string; type?: "password" | "text" | "email" };
+type ConnectionOption = { id: ProviderId; icon: string; name: string; use: string; required: boolean; helpUrl: string; fields: ConnectionField[] };
+
+const connectionOptions: ConnectionOption[] = [
+  { id: "openai", icon: "AI", name: "OpenAI", use: "Hinglish support and personalized replies", required: true, helpUrl: "https://platform.openai.com/api-keys", fields: [
+    { key: "OPENAI_API_KEY", label: "OpenAI API key", required: true, hint: "Create a fresh project key. The earlier key shared in chat should remain revoked." },
+    { key: "OPENAI_MODEL", label: "Model", type: "text", hint: "Optional. Defaults to gpt-5-mini." },
+  ] },
+  { id: "google", icon: "G", name: "Google Places", use: "Local business discovery from Google Maps", required: true, helpUrl: "https://console.cloud.google.com/google/maps-apis/credentials", fields: [
+    { key: "GOOGLE_PLACES_API_KEY", label: "Google Places API key", required: true, hint: "Enable Places API (New) for this key." },
+  ] },
+  { id: "whatsapp", icon: "WA", name: "WhatsApp Business", use: "Customer support and approved outreach", required: false, helpUrl: "https://developers.facebook.com/apps/", fields: [
+    { key: "WHATSAPP_ACCESS_TOKEN", label: "Permanent access token", required: true },
+    { key: "WHATSAPP_PHONE_NUMBER_ID", label: "Phone number ID", required: true, type: "text" },
+    { key: "WHATSAPP_VERIFY_TOKEN", label: "Webhook verify token", hint: "A private phrase you choose for webhook verification." },
+    { key: "WHATSAPP_APP_SECRET", label: "Meta app secret" },
+  ] },
+  { id: "twilio", icon: "SMS", name: "Twilio SMS + Voice", use: "DLT-approved SMS and AI call support", required: false, helpUrl: "https://console.twilio.com/", fields: [
+    { key: "TWILIO_ACCOUNT_SID", label: "Account SID", required: true, type: "text" },
+    { key: "TWILIO_AUTH_TOKEN", label: "Auth token", required: true },
+    { key: "TWILIO_SMS_FROM", label: "SMS sender / number", required: true, type: "text", hint: "Use an approved Indian DLT sender where applicable." },
+  ] },
+  { id: "resend", icon: "✉", name: "Resend Email", use: "Support and consent-compliant email", required: false, helpUrl: "https://resend.com/api-keys", fields: [
+    { key: "RESEND_API_KEY", label: "Resend API key", required: true },
+    { key: "EMAIL_FROM", label: "Verified sender", required: true, type: "email", hint: "Example: Clear Web Solutions <hello@yourdomain.com>" },
+    { key: "EMAIL_WEBHOOK_SECRET", label: "Inbound webhook secret" },
+  ] },
+];
+
 const demoLeads: Lead[] = [
   { id: "demo-1", name: "The Pepper Table", category: "Restaurant", city: "Pune", rating: 4.6, reviewCount: 428, score: 89, priority: "high", stage: "warm", gaps: ["No online booking flow", "No WhatsApp CTA"], pitchAngle: "Turn strong local interest into direct table bookings." },
   { id: "demo-2", name: "Namma Filter Coffee", category: "Café", city: "Bengaluru", rating: 4.5, reviewCount: 216, score: 82, priority: "high", stage: "contacted", gaps: ["No business website linked"], pitchAngle: "Create a fast menu-first website for local discovery." },
@@ -73,7 +104,7 @@ export function Dashboard() {
         {section === "leads" && <LeadCRM leads={filtered} query={query} setQuery={setQuery} priority={priority} setPriority={setPriority} onAdd={() => setModal(true)} />}
         {section === "inbox" && <AIInbox flash={flash} />}
         {section === "campaigns" && <Campaigns flash={flash} />}
-        {section === "settings" && <Connections />}
+        {section === "settings" && <Connections flash={flash} />}
 
         <nav className="mobile-nav">{nav.slice(0, 4).map(([id, icon, label]) => <button key={id} className={section === id ? "active" : ""} onClick={() => setSection(id)}><span>{icon}</span>{label}</button>)}</nav>
       </main>
@@ -144,9 +175,69 @@ function Campaigns({ flash }: { flash: (s: string) => void }) {
   </div>;
 }
 
-function Connections() {
-  const connections = [{ icon: "AI", name: "OpenAI", key: "OPENAI_API_KEY", use: "Hinglish support and personalization" }, { icon: "G", name: "Google Places", key: "GOOGLE_PLACES_API_KEY", use: "Local business discovery" }, { icon: "WA", name: "WhatsApp Business", key: "WHATSAPP_ACCESS_TOKEN", use: "Customer support and approved outreach" }, { icon: "SMS", name: "Twilio SMS + Voice", key: "TWILIO_AUTH_TOKEN", use: "DLT-approved SMS and AI call support" }, { icon: "✉", name: "Resend Email", key: "RESEND_API_KEY", use: "Support and consent-compliant email" }];
-  return <div className="content"><section className="page-intro"><div><span>CONNECTION CENTRE</span><h2>Add keys. ClearFlow handles the workflow.</h2><p>Secrets are added in hosting settings—not pasted into this dashboard or stored in the CRM.</p></div></section><div className="security-callout"><span>▣</span><div><b>Your credentials stay server-side</b><p>Keys are read only by protected provider adapters. They are never sent to the browser, AI context, analytics, or logs.</p></div></div><section className="connections">{connections.map((item, index) => <article key={item.name}><span className={`connection-icon c${index}`}>{item.icon}</span><div><h3>{item.name}</h3><p>{item.use}</p><code>{item.key}</code></div><button>{index < 2 ? "Add key" : "Configure"}</button><i className={index < 2 ? "required" : "optional"}>{index < 2 ? "Required" : "Optional"}</i></article>)}</section><section className="panel launch-check"><PanelTitle title="Launch checklist" sub="Provider approvals need to be completed once" action="Setup guide" /><div><p><span>1</span><b>Connect required API keys</b><small>OpenAI and Google Places</small></p><p><span>2</span><b>Verify WhatsApp Business</b><small>Phone number and message templates</small></p><p><span>3</span><b>Complete India DLT registration</b><small>Required for domestic commercial SMS</small></p><p><span>4</span><b>Run test conversations</b><small>English, Hindi, Hinglish, opt-out and handoff</small></p></div></section></div>;
+function Connections({ flash }: { flash: (s: string) => void }) {
+  const [statuses, setStatuses] = useState<Record<string, ConnectionState>>({});
+  const [selected, setSelected] = useState<ConnectionOption | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [vaultReady, setVaultReady] = useState(true);
+
+  async function refresh() {
+    try {
+      const response = await fetch("/api/connections", { cache: "no-store" });
+      const data = await response.json() as { connections?: ConnectionState[]; vaultReady?: boolean; error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Could not load connection status");
+      setStatuses(Object.fromEntries((data.connections ?? []).map((item) => [item.id, item])));
+      setVaultReady(data.vaultReady !== false);
+    } catch (error) {
+      flash(error instanceof Error ? error.message : "Could not load connection status");
+    } finally { setLoading(false); }
+  }
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/connections", { cache: "no-store" }).then(async (response) => {
+      const data = await response.json() as { connections?: ConnectionState[]; vaultReady?: boolean; error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Could not load connection status");
+      if (active) {
+        setStatuses(Object.fromEntries((data.connections ?? []).map((item) => [item.id, item])));
+        setVaultReady(data.vaultReady !== false);
+      }
+    }).catch(() => undefined).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  return <div className="content"><section className="page-intro"><div><span>CONNECTION CENTRE</span><h2>Connect your services securely.</h2><p>Open a provider, enter its credentials, and ClearFlow will verify the connection before saving.</p></div></section><div className="security-callout"><span>▣</span><div><b>Your credentials are encrypted</b><p>Secrets are sent over HTTPS, encrypted before storage, and never returned to the browser, AI context, analytics, logs, or GitHub.</p></div></div>{!vaultReady && !loading && <div className="connection-warning">Secure storage is being initialized. Please try again after the latest update finishes publishing.</div>}<section className="connections">{connectionOptions.map((item, index) => { const status = statuses[item.id]; return <article key={item.id} className={status?.connected ? "connected" : ""}><span className={`connection-icon c${index}`}>{item.icon}</span><div><h3>{item.name}</h3><p>{item.use}</p><span className={`connection-state ${status?.connected ? "is-connected" : status?.lastError ? "has-error" : ""}`}><i></i>{loading ? "Checking…" : status?.connected ? "Connected and verified" : status?.lastError ? "Needs attention" : "Not connected"}</span></div><button onClick={() => setSelected(item)} disabled={loading}>{status?.connected ? "Manage" : item.required ? "Add key" : "Configure"}</button><i className={item.required ? "required" : "optional"}>{item.required ? "Required" : "Optional"}</i></article>; })}</section><section className="panel launch-check"><PanelTitle title="Launch checklist" sub="Provider approvals need to be completed once" action="Connect OpenAI" onAction={() => setSelected(connectionOptions[0])} /><div><p><span>1</span><b>Connect required API keys</b><small>OpenAI and Google Places</small></p><p><span>2</span><b>Verify WhatsApp Business</b><small>Phone number and message templates</small></p><p><span>3</span><b>Complete India DLT registration</b><small>Required for domestic commercial SMS</small></p><p><span>4</span><b>Run test conversations</b><small>English, Hindi, Hinglish, opt-out and handoff</small></p></div></section>{selected && <ConnectionModal option={selected} status={statuses[selected.id]} close={() => setSelected(null)} saved={async () => { await refresh(); setSelected(null); flash(`${selected.name} connected successfully`); }} flash={flash} />}</div>;
+}
+
+function ConnectionModal({ option, status, close, saved, flash }: { option: ConnectionOption; status?: ConnectionState; close: () => void; saved: () => Promise<void>; flash: (s: string) => void }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(status?.lastError ?? "");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setSaving(true); setError("");
+    const form = event.currentTarget;
+    const values = Object.fromEntries(Array.from(new FormData(form).entries()).map(([key, value]) => [key, String(value).trim()]));
+    try {
+      const response = await fetch("/api/connections", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: option.id, values }) });
+      const data = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Connection test failed");
+      form.reset(); await saved();
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "Connection test failed"); }
+    finally { setSaving(false); }
+  }
+
+  async function disconnect() {
+    if (!window.confirm(`Disconnect ${option.name}? Saved credentials for this provider will be permanently removed.`)) return;
+    setSaving(true);
+    try {
+      const response = await fetch(`/api/connections?provider=${option.id}`, { method: "DELETE" });
+      const data = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Could not disconnect provider");
+      close(); flash(`${option.name} disconnected`); window.location.reload();
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "Could not disconnect provider"); setSaving(false); }
+  }
+
+  return <div className="modal-backdrop" onMouseDown={close}><form className="modal connection-modal" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()} autoComplete="off"><div className="modal-head"><div><span>{status?.connected ? "MANAGE CONNECTION" : "SECURE CONNECTION"}</span><h2>{option.name}</h2><p>Credentials are verified with {option.name} before encrypted storage.</p></div><button type="button" onClick={close}>×</button></div><div className="connection-form">{status?.configured && <div className="saved-secret-note"><b>Saved credentials are hidden</b><span>Leave a field blank to keep its current value, or enter a replacement.</span></div>}{option.fields.map((field) => <label key={field.key}>{field.label}{field.required && <em>Required</em>}<input name={field.key} type={field.type ?? "password"} required={Boolean(field.required && !status?.configured)} placeholder={status?.configured ? "Saved securely — enter only to replace" : field.required ? "Enter credential" : "Optional"} autoComplete="new-password" />{field.hint && <small>{field.hint}</small>}</label>)}{error && <div className="connection-error"><b>Connection not saved</b><span>{error}</span></div>}<a href={option.helpUrl} target="_blank" rel="noreferrer">Open {option.name} setup ↗</a></div><footer>{status?.connected && <button type="button" className="danger" onClick={disconnect} disabled={saving}>Disconnect</button>}<button type="button" onClick={close}>Cancel</button><button className="primary" disabled={saving}>{saving ? "Testing securely…" : status?.connected ? "Test & update" : "Test & connect"}</button></footer></form></div>;
 }
 
 function AddLeadModal({ close, onCreated, flash }: { close: () => void; onCreated: (lead: Lead) => void; flash: (s: string) => void }) {

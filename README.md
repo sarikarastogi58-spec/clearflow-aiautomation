@@ -91,11 +91,12 @@ pnpm test
 | `POST /api/webhooks/email` | Authenticated normalized inbound email events |
 | `POST /api/jobs/followups` | Recheck and ready due follow-ups |
 | `GET /api/analytics` | Funnel metrics |
+| `GET/POST/DELETE /api/connections` | Check, verify, encrypt, update, or remove provider credentials |
 
 ## Production controls
 
 - Restrict the deployed dashboard to the Clear Web Solutions workspace/team.
-- Put secrets only in managed hosting settings.
+- Provider credentials entered through the private Connections screen are verified, AES-GCM encrypted, and stored in D1. The vault master key remains only in managed hosting settings.
 - Set provider spending limits, alert thresholds, quiet hours, and approved templates before enabling campaigns.
 - Keep campaigns paused until consent proof is imported and manually sample the first audience.
 - Review the exact outreach, privacy, DLT, retention, and recording flow with India-qualified counsel.

@@ -98,3 +98,18 @@ export const events = sqliteTable("events", {
   payload: text("payload").notNull().default("{}"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [index("event_type_idx").on(table.eventType, table.createdAt)]);
+
+export const vaultSecrets = sqliteTable("vault_secrets", {
+  name: text("name").primaryKey(),
+  encryptedValue: text("encrypted_value").notNull(),
+  iv: text("iv").notNull(),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const providerConnections = sqliteTable("provider_connections", {
+  provider: text("provider").primaryKey(),
+  status: text("status").notNull().default("not_connected"),
+  lastTestedAt: text("last_tested_at"),
+  lastError: text("last_error"),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
