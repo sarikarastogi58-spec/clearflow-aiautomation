@@ -1,43 +1,55 @@
 # ClearFlow
 
-ClearFlow is the production-oriented AI operations system for **Clear Web Solutions**. It combines Apify-powered local business discovery, an evidence-based lead CRM, multilingual customer support, consent-gated email and SMS outreach, automatic follow-up cancellation, and conversion analytics.
+ClearFlow is the AI operations system for **Clear Web Solutions**. It combines Apify local-business discovery, an evidence-based lead CRM, multilingual support, Gmail outreach, Twilio SMS and AI calls, automatic reply handling, follow-up cancellation, and conversion analytics.
 
 ## What works
 
-- Responsive dashboard with Overview, Lead CRM, AI Inbox, Campaigns, and secure Connections.
-- Apify discovery from the CRM with city, category, rating, review-count, website, closure, and independent-business filters.
-- Bulk import into Cloudflare D1 with deterministic website-need, business-potential, digital-gap, pitch-angle, priority, and 0–100 lead scoring.
-- OpenAI Responses API support agent for English, Hindi, and natural Hinglish.
-- MSG91 Flow API SMS and Resend email adapters; Twilio voice remains optional.
-- Consent and suppression gates before every send. Public listing data is never treated as consent.
-- Authenticated inbound SMS/email handling, multilingual opt-out recognition, warm-lead marking, and follow-up cancellation on reply.
-- Three-day and seven-day follow-up jobs plus funnel analytics.
-- AES-GCM encrypted provider credentials managed from the private dashboard; secrets are never returned to the browser.
+- Private responsive dashboard with Overview, Lead CRM, AI Inbox, Campaigns, and encrypted Connections.
+- Apify discovery with city, category, rating, review-count, website, closure, and independent-business filters.
+- Bulk CRM import with deterministic 0–100 scoring, website need, potential, digital gaps, pitch angle, and priority.
+- OpenAI support agent for English, Hindi, and natural Hinglish.
+- Gmail API OAuth flow with encrypted offline refresh token, personalized sending, and scheduled inbox reply synchronization.
+- Twilio SMS sending, inbound reply/opt-out handling, delivery status callbacks, and outbound AI consultation calls.
+- Cryptographic validation of Twilio webhook signatures.
+- Consent, suppression, six-hour contact caps, channel rate limiting, retries with jitter, and provider tracking.
+- Three-day and seven-day email/SMS follow-up jobs that are cancelled automatically after replies or opt-outs.
+- Analytics for leads, high-quality leads, sends, replies, interested leads, wins, and conversion.
 
 ## Configure from the dashboard
 
-Open **Connections** and add:
+Open **Connections** and complete:
+
+1. OpenAI API key.
+2. Apify API token.
+3. Google OAuth Web application client ID and client secret, followed by **Authorize Gmail**.
+4. Twilio Account SID, Auth Token, SMS sender, and Voice caller ID.
+
+For the Google OAuth client, enable Gmail API and add this authorized redirect URI:
 
 ```text
-OPENAI_API_KEY
-APIFY_API_TOKEN
-MSG91_AUTH_KEY
-MSG91_TEMPLATE_ID
-RESEND_API_KEY
-EMAIL_FROM
+https://clearflow-cws-india.sarikarastogi58.chatgpt.site/api/oauth/gmail/callback
 ```
 
-Optional fields are shown in each provider dialog. Apify defaults to the `compass~crawler-google-places` actor, and MSG91 defaults to a Flow variable named `MESSAGE`.
+For Twilio, configure:
 
-## Provider-side setup
+```text
+Inbound SMS webhook:  POST /api/webhooks/sms
+Voice webhook:        POST /api/webhooks/voice
+Status callbacks:     managed automatically by ClearFlow
+```
 
-1. Create an Apify API token and accept any terms/costs for the configured actor.
-2. Verify a sending domain in Resend.
-3. Complete Indian DLT registration and approve the exact MSG91 Flow template and sender.
-4. Obtain and retain verifiable marketing consent. A phone number or email on a public listing is not consent.
-5. Configure a scheduler to call `POST /api/jobs/followups` with `Authorization: Bearer <CRON_SECRET>`.
+Twilio domestic Indian SMS requires the applicable DLT registration and approved sender/use case. Twilio international routing may replace the visible sender with a random short code. Outbound commercial SMS and calls still require verifiable recipient consent.
 
-Keep campaigns paused until sender approvals and consent proof are complete. Review the outreach, privacy, DLT, retention, and call-recording flow with India-qualified counsel.
+## Scheduled jobs
+
+Call both routes with `Authorization: Bearer <CRON_SECRET>`:
+
+```text
+POST /api/jobs/followups
+POST /api/jobs/gmail-sync
+```
+
+The Gmail job checks recent inbox messages, records matched replies, marks leads warm, and cancels pending follow-ups.
 
 ## Local development
 
@@ -48,7 +60,7 @@ pnpm install
 pnpm dev
 ```
 
-Copy `.env.example` to `.env.local`. The hosting platform applies the checked-in D1 migrations to its managed database.
+Copy `.env.example` to `.env.local`. The hosting platform applies the checked-in D1 migrations.
 
 ## Validation
 
@@ -62,15 +74,18 @@ pnpm test
 | Endpoint | Purpose |
 |---|---|
 | `GET/POST /api/leads` | List, add, score, and store CRM leads |
-| `POST /api/discovery` | Run filtered Apify local-business discovery |
+| `POST /api/discovery` | Run filtered Apify discovery |
 | `POST /api/support` | Generate a multilingual support reply |
 | `POST /api/consents` | Record verifiable channel consent |
-| `POST /api/outreach` | Consent-check and send MSG91 SMS or Resend email |
-| `POST /api/webhooks/sms` | Authenticated inbound SMS, reply, and opt-out events |
-| `POST /api/webhooks/email` | Authenticated normalized inbound email events |
-| `POST /api/webhooks/voice` | Optional multilingual Twilio speech support |
-| `POST /api/jobs/followups` | Recheck and ready due follow-ups |
+| `POST /api/outreach` | Send consent-checked Gmail email, Twilio SMS, or Twilio call |
+| `GET /api/oauth/gmail/start` | Begin secure Gmail OAuth authorization |
+| `GET /api/oauth/gmail/callback` | Exchange authorization and encrypt Gmail credentials |
+| `POST /api/webhooks/sms` | Receive signed Twilio SMS replies and opt-outs |
+| `POST /api/webhooks/voice` | Run the signed Twilio speech assistant |
+| `POST /api/webhooks/twilio/status` | Track signed SMS and call status callbacks |
+| `POST /api/jobs/gmail-sync` | Synchronize Gmail replies into the CRM |
+| `POST /api/jobs/followups` | Recheck and release due follow-ups |
 | `GET /api/analytics` | Funnel and conversion metrics |
-| `GET/POST/DELETE /api/connections` | Verify, encrypt, update, or remove provider credentials |
+| `GET/POST/DELETE /api/connections` | Test, encrypt, authorize, update, or remove credentials |
 
-The detailed architecture and operating model are in [`docs/architecture.md`](docs/architecture.md).
+The full architecture is documented in [`docs/architecture.md`](docs/architecture.md).

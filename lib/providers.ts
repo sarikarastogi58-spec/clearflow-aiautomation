@@ -1,4 +1,4 @@
-export type ProviderId = "openai" | "apify" | "msg91" | "resend" | "twilio";
+export type ProviderId = "openai" | "apify" | "gmail" | "twilio";
 
 export type ProviderDefinition = {
   id: ProviderId;
@@ -13,17 +13,14 @@ export const providerDefinitions: Record<ProviderId, ProviderDefinition> = {
     id: "apify", name: "Apify",
     required: ["APIFY_API_TOKEN"], optional: ["APIFY_ACTOR_ID"],
   },
-  msg91: {
-    id: "msg91", name: "MSG91 SMS",
-    required: ["MSG91_AUTH_KEY", "MSG91_TEMPLATE_ID"], optional: ["MSG91_MESSAGE_VARIABLE", "MSG91_WEBHOOK_TOKEN"],
-  },
-  resend: {
-    id: "resend", name: "Resend Email",
-    required: ["RESEND_API_KEY", "EMAIL_FROM"], optional: ["EMAIL_WEBHOOK_SECRET"],
+  gmail: {
+    id: "gmail", name: "Gmail",
+    required: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GMAIL_REFRESH_TOKEN", "GMAIL_SENDER_EMAIL"], optional: [],
   },
   twilio: {
-    id: "twilio", name: "Twilio Voice",
-    required: ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"], optional: ["TWILIO_VOICE_FROM"],
+    id: "twilio", name: "Twilio Calls + SMS",
+    required: ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_SMS_FROM", "TWILIO_VOICE_FROM"],
+    optional: ["TWILIO_MESSAGING_SERVICE_SID"],
   },
 };
 

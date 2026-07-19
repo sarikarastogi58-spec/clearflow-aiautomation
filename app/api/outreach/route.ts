@@ -1,58 +1,9 @@
 import { and, desc, eq, gte } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { consents, events, followupJobs, leads, messages, suppressions } from "../../../db/schema";
-import { addDays, id } from "../../../lib/automation";
-import { resolveSecret } from "../../../lib/secrets";
-
-async function fetchWithRetry(url: string, init: RequestInit) {
-  let response: Response | undefined;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    response = await fetch(url, init);
-    if (response.status !== 429 && response.status < 500) return response;
-    if (attempt < 2) {
-      const retryAfter = Number(response.headers.get("retry-after"));
-      const delay = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 5000) : (250 * (2 ** attempt)) + Math.floor(Math.random() * 250);
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
-  }
-  return response as Response;
-}
-
-async function sendSms(to: string, body: string) {
-  const authKey = await resolveSecret("MSG91_AUTH_KEY");
-  const templateId = await resolveSecret("MSG91_TEMPLATE_ID");
-  const messageVariable = (await resolveSecret("MSG91_MESSAGE_VARIABLE"))?.trim() || "MESSAGE";
-  if (!authKey || !templateId) throw new Error("MSG91 SMS credentials are not configured");
-  const rawDigits = to.replace(/\D/g, "");
-  const mobile = rawDigits.length === 10 ? `91${rawDigits}` : rawDigits;
-  if (mobile.length < 11 || mobile.length > 15) throw new Error("SMS destination must include a valid country code");
-  const response = await fetchWithRetry("https://control.msg91.com/api/v5/flow", {
-    method: "POST",
-    headers: { accept: "application/json", authkey: authKey, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      template_id: templateId,
-      short_url: "0",
-      realTimeResponse: "1",
-      recipients: [{ mobiles: mobile, [messageVariable]: body }],
-    }),
-  });
-  const data = await response.json() as { type?: string; message?: string; request_id?: string };
-  if (!response.ok || data.type === "error") throw new Error(data.message ?? `MSG91 returned ${response.status}`);
-  return data.request_id ?? id("sms");
-}
-
-async function sendEmail(to: string, subject: string, body: string, idempotencyKey: string) {
-  const apiKey = await resolveSecret("RESEND_API_KEY");
-  const from = await resolveSecret("EMAIL_FROM");
-  if (!apiKey || !from) throw new Error("Email credentials are not configured");
-  const response = await fetchWithRetry("https://api.resend.com/emails", {
-    method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
-    body: JSON.stringify({ from, to: [to], subject, text: body }),
-  });
-  const data = await response.json() as { id?: string; message?: string };
-  if (!response.ok) throw new Error(data.message ?? `Email provider returned ${response.status}`);
-  return data.id ?? id("email");
-}
+import { addDays, id, normalizePhone } from "../../../lib/automation";
+import { sendGmailEmail } from "../../../lib/gmail";
+import { placeTwilioCall, sendTwilioSms } from "../../../lib/twilio";
 
 export async function POST(request: Request) {
   try {
@@ -72,19 +23,35 @@ export async function POST(request: Request) {
     }
 
     let providerMessageId: string;
+    const origin = new URL(request.url).origin;
+    const statusCallback = `${origin}/api/webhooks/twilio/status`;
     if (body.channel === "sms") {
       if (!body.body?.trim()) return Response.json({ error: "SMS_BODY_REQUIRED" }, { status: 400 });
-      providerMessageId = await sendSms(body.to, body.body);
+      providerMessageId = await sendTwilioSms(body.to, body.body, statusCallback);
     } else if (body.channel === "email") {
       if (!body.body?.trim() || !body.subject?.trim()) return Response.json({ error: "EMAIL_SUBJECT_AND_BODY_REQUIRED" }, { status: 400 });
-      providerMessageId = await sendEmail(body.to, body.subject, body.body, body.idempotencyKey ?? `${body.leadId}:email:${Date.now()}`);
+      providerMessageId = await sendGmailEmail(body.to, body.subject, body.body, body.idempotencyKey ?? `${body.leadId}.email.${Date.now()}`);
+    } else if (body.channel === "voice") {
+      providerMessageId = await placeTwilioCall(body.to, `${origin}/api/webhooks/voice`, statusCallback);
     } else {
-      return Response.json({ error: `${body.channel} is inbound-support only; automated promotional calls are disabled` }, { status: 501 });
+      return Response.json({ error: `Unsupported outreach channel: ${body.channel}` }, { status: 400 });
     }
     const messageId = id("msg");
+    const now = new Date().toISOString();
+    const contactDetails = body.channel === "email"
+      ? { email: body.to.trim().toLowerCase() }
+      : { phone: normalizePhone(body.to) };
+    if (body.channel === "voice") {
+      await db.batch([
+        db.insert(messages).values({ id: messageId, leadId: body.leadId, direction: "outbound", channel: body.channel, body: body.body ?? "AI consultation call", providerMessageId, status: "queued", campaign: "initial_outreach", sentAt: now }),
+        db.update(leads).set({ ...contactDetails, stage: "contacted", lastContactAt: now, nextActionAt: null, updatedAt: now }).where(eq(leads.id, body.leadId)),
+        db.insert(events).values({ id: id("evt"), eventType: "call_queued", entityType: "lead", entityId: body.leadId, payload: JSON.stringify({ channel: body.channel, providerMessageId }) }),
+      ]);
+      return Response.json({ messageId, providerMessageId, status: "queued", followupsScheduled: [] });
+    }
     await db.batch([
-      db.insert(messages).values({ id: messageId, leadId: body.leadId, direction: "outbound", channel: body.channel, body: body.body ?? "", providerMessageId, status: "sent", campaign: "initial_outreach", sentAt: new Date().toISOString() }),
-      db.update(leads).set({ stage: "contacted", lastContactAt: new Date().toISOString(), nextActionAt: addDays(3), updatedAt: new Date().toISOString() }).where(eq(leads.id, body.leadId)),
+      db.insert(messages).values({ id: messageId, leadId: body.leadId, direction: "outbound", channel: body.channel, body: body.body ?? "", providerMessageId, status: "sent", campaign: "initial_outreach", sentAt: now }),
+      db.update(leads).set({ ...contactDetails, stage: "contacted", lastContactAt: now, nextActionAt: addDays(3), updatedAt: now }).where(eq(leads.id, body.leadId)),
       db.insert(followupJobs).values({ id: id("job"), leadId: body.leadId, channel: body.channel, step: 1, runAt: addDays(3), idempotencyKey: `${body.leadId}:${body.channel}:followup:3d` }),
       db.insert(followupJobs).values({ id: id("job"), leadId: body.leadId, channel: body.channel, step: 2, runAt: addDays(7), idempotencyKey: `${body.leadId}:${body.channel}:followup:7d` }),
       db.insert(events).values({ id: id("evt"), eventType: "message_sent", entityType: "lead", entityId: body.leadId, payload: JSON.stringify({ channel: body.channel, providerMessageId }) }),

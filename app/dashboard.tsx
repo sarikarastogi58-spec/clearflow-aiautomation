@@ -6,14 +6,14 @@ type Lead = {
   id: string; name: string; category: string; city: string; rating: number;
   reviewCount: number; score: number; priority: string; stage: string;
   gaps?: string[]; pitchAngle?: string; phone?: string; websiteUrl?: string | null;
-  address?: string; placeId?: string; mapsUrl?: string;
+  email?: string; address?: string; placeId?: string; mapsUrl?: string;
 };
 
 type DiscoveredPlace = Omit<Lead, "id" | "score" | "priority" | "stage"> & {
   placeId: string; source: "apify"; websiteStatus: "none" | "weak"; preferred: boolean;
 };
 
-type ProviderId = "openai" | "apify" | "msg91" | "resend" | "twilio";
+type ProviderId = "openai" | "apify" | "gmail" | "twilio";
 type ConnectionState = { id: ProviderId; connected: boolean; configured: boolean; lastTestedAt: string | null; lastError: string | null };
 type ConnectionField = { key: string; label: string; required?: boolean; hint?: string; type?: "password" | "text" | "email" };
 type ConnectionOption = { id: ProviderId; icon: string; name: string; use: string; required: boolean; helpUrl: string; fields: ConnectionField[] };
@@ -27,21 +27,16 @@ const connectionOptions: ConnectionOption[] = [
     { key: "APIFY_API_TOKEN", label: "Apify API token", required: true, hint: "Use a personal API token from Apify Integrations." },
     { key: "APIFY_ACTOR_ID", label: "Google Places actor ID", type: "text", hint: "Optional. Defaults to compass~crawler-google-places." },
   ] },
-  { id: "msg91", icon: "SMS", name: "MSG91 SMS", use: "DLT-compliant Indian SMS outreach", required: true, helpUrl: "https://control.msg91.com/app/", fields: [
-    { key: "MSG91_AUTH_KEY", label: "MSG91 auth key", required: true },
-    { key: "MSG91_TEMPLATE_ID", label: "Approved Flow template ID", required: true, type: "text", hint: "Use an approved MSG91 Flow template mapped to your DLT content." },
-    { key: "MSG91_MESSAGE_VARIABLE", label: "Message variable", type: "text", hint: "Optional. Defaults to MESSAGE; match the variable in your Flow template." },
-    { key: "MSG91_WEBHOOK_TOKEN", label: "Inbound webhook token", hint: "Optional private token used to authenticate SMS callbacks." },
+  { id: "gmail", icon: "G", name: "Gmail", use: "Personalized email sending and reply sync", required: true, helpUrl: "https://console.cloud.google.com/apis/credentials", fields: [
+    { key: "GOOGLE_CLIENT_ID", label: "Google OAuth client ID", required: true, type: "text", hint: "Enable Gmail API and create a Web application OAuth client." },
+    { key: "GOOGLE_CLIENT_SECRET", label: "Google OAuth client secret", required: true, hint: "Authorized redirect URI: https://clearflow-cws-india.sarikarastogi58.chatgpt.site/api/oauth/gmail/callback" },
   ] },
-  { id: "resend", icon: "@", name: "Resend Email", use: "Support and consent-compliant email", required: true, helpUrl: "https://resend.com/api-keys", fields: [
-    { key: "RESEND_API_KEY", label: "Resend API key", required: true },
-    { key: "EMAIL_FROM", label: "Verified sender", required: true, type: "text", hint: "Example: Clear Web Solutions <hello@yourdomain.com>" },
-    { key: "EMAIL_WEBHOOK_SECRET", label: "Inbound webhook secret" },
-  ] },
-  { id: "twilio", icon: "TEL", name: "Twilio Voice", use: "Optional AI call support", required: false, helpUrl: "https://console.twilio.com/", fields: [
+  { id: "twilio", icon: "T", name: "Twilio Calls + SMS", use: "AI phone calls, SMS outreach and delivery tracking", required: true, helpUrl: "https://console.twilio.com/", fields: [
     { key: "TWILIO_ACCOUNT_SID", label: "Account SID", required: true, type: "text" },
     { key: "TWILIO_AUTH_TOKEN", label: "Auth token", required: true },
-    { key: "TWILIO_VOICE_FROM", label: "Voice number", type: "text", hint: "Optional Twilio number used for voice support." },
+    { key: "TWILIO_SMS_FROM", label: "SMS sender / number", required: true, type: "text", hint: "For India, review Twilio international routing or complete domestic DLT registration." },
+    { key: "TWILIO_VOICE_FROM", label: "Voice caller ID", required: true, type: "text", hint: "Use a Twilio number or verified outbound caller ID." },
+    { key: "TWILIO_MESSAGING_SERVICE_SID", label: "Messaging Service SID", type: "text", hint: "Optional. When present, this is used instead of the SMS sender field." },
   ] },
 ];
 
@@ -66,6 +61,7 @@ export function Dashboard() {
   const [demo, setDemo] = useState(true);
   const [modal, setModal] = useState(false);
   const [discoverModal, setDiscoverModal] = useState(false);
+  const [contactLead, setContactLead] = useState<Lead | null>(null);
   const [toast, setToast] = useState("");
   const [query, setQuery] = useState("");
   const [priority, setPriority] = useState("all");
@@ -81,6 +77,19 @@ export function Dashboard() {
         if (metricData.total) { setMetrics(metricData); setDemo(false); }
       }
     }).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    const parameters = new URLSearchParams(window.location.search);
+    const gmail = parameters.get("gmail");
+    if (!gmail) return;
+    window.history.replaceState({}, "", window.location.pathname);
+    const show = window.setTimeout(() => {
+      setSection("settings");
+      setToast(gmail === "connected" ? "Gmail authorized successfully" : parameters.get("message") ?? "Gmail authorization failed");
+    }, 0);
+    const hide = window.setTimeout(() => setToast(""), 3200);
+    return () => { window.clearTimeout(show); window.clearTimeout(hide); };
   }, []);
 
   const filtered = useMemo(() => leads.filter((lead) =>
@@ -108,7 +117,7 @@ export function Dashboard() {
         </header>
 
         {section === "overview" && <Overview metrics={metrics} leads={leads} demo={demo} openLeads={() => setSection("leads")} />}
-        {section === "leads" && <LeadCRM leads={filtered} query={query} setQuery={setQuery} priority={priority} setPriority={setPriority} onAdd={() => setModal(true)} onDiscover={() => setDiscoverModal(true)} />}
+        {section === "leads" && <LeadCRM leads={filtered} query={query} setQuery={setQuery} priority={priority} setPriority={setPriority} onAdd={() => setModal(true)} onDiscover={() => setDiscoverModal(true)} onContact={setContactLead} />}
         {section === "inbox" && <AIInbox flash={flash} />}
         {section === "campaigns" && <Campaigns flash={flash} />}
         {section === "settings" && <Connections flash={flash} />}
@@ -117,6 +126,7 @@ export function Dashboard() {
       </main>
       {modal && <AddLeadModal close={() => setModal(false)} onCreated={(lead) => { setLeads((current) => [lead, ...current]); setModal(false); flash("Lead scored and added to CRM"); }} flash={flash} />}
       {discoverModal && <DiscoveryModal close={() => setDiscoverModal(false)} onImported={(imported) => { setLeads((current) => [...imported, ...(demo ? [] : current)]); setDemo(false); setDiscoverModal(false); flash(`${imported.length} Apify leads scored and added to CRM`); }} flash={flash} />}
+      {contactLead && <OutreachModal lead={contactLead} close={() => setContactLead(null)} sent={(message) => { setContactLead(null); setLeads((current) => current.map((lead) => lead.id === contactLead.id ? { ...lead, stage: "contacted" } : lead)); flash(message); }} flash={flash} />}
       {toast && <div className="toast">✓ {toast}</div>}
     </div>
   );
@@ -152,15 +162,15 @@ function Activity({ icon, color, title, detail, time }: { icon: string; color: s
   return <div className="activity-item"><span className={color}>{icon}</span><div><b>{title}</b><p>{detail}</p></div><small>{time}</small></div>;
 }
 
-function LeadCRM({ leads, query, setQuery, priority, setPriority, onAdd, onDiscover }: { leads: Lead[]; query: string; setQuery: (s: string) => void; priority: string; setPriority: (s: string) => void; onAdd: () => void; onDiscover: () => void }) {
+function LeadCRM({ leads, query, setQuery, priority, setPriority, onAdd, onDiscover, onContact }: { leads: Lead[]; query: string; setQuery: (s: string) => void; priority: string; setPriority: (s: string) => void; onAdd: () => void; onDiscover: () => void; onContact: (lead: Lead) => void }) {
   return <div className="content"><section className="page-intro"><div><span>SMART CRM</span><h2>Every opportunity, clearly prioritized.</h2><p>Scores are evidence-based. Outreach stays locked until consent is recorded.</p></div><div className="intro-actions"><button onClick={onDiscover}>◎ Discover with Apify</button><button className="primary" onClick={onAdd}>＋ New lead</button></div></section>
     <section className="pipeline-summary"><div><small>RESEARCHED</small><b>34</b><i></i></div><div><small>CONTACTED</small><b>21</b><i></i></div><div><small>WARM</small><b>11</b><i></i></div><div><small>BOOKED</small><b>6</b><i></i></div><div><small>WON</small><b>7</b><i></i></div></section>
-    <section className="panel lead-table-panel"><div className="filters"><label>⌕<input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search businesses, cities…" /></label><div>{["all", "high", "medium", "low"].map((item) => <button key={item} className={priority === item ? "active" : ""} onClick={() => setPriority(item)}>{item}</button>)}</div><button className="filter-button">☷ More filters</button></div><LeadTable leads={leads} detailed /></section>
+    <section className="panel lead-table-panel"><div className="filters"><label>⌕<input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search businesses, cities…" /></label><div>{["all", "high", "medium", "low"].map((item) => <button key={item} className={priority === item ? "active" : ""} onClick={() => setPriority(item)}>{item}</button>)}</div><button className="filter-button">☷ More filters</button></div><LeadTable leads={leads} detailed onContact={onContact} /></section>
   </div>;
 }
 
-function LeadTable({ leads, detailed = false }: { leads: Lead[]; detailed?: boolean }) {
-  return <div className="table-wrap"><table><thead><tr><th>Business</th><th>Location</th><th>Proof</th><th>Score</th><th>Status</th>{detailed && <th>Opportunity</th>}<th></th></tr></thead><tbody>{leads.map((lead) => <tr key={lead.id}><td><div className="business-cell"><span>{lead.name.slice(0, 1)}</span><div><b>{lead.name}</b><small>{lead.category}</small></div></div></td><td>{lead.city}</td><td><div className="rating">★ {lead.rating ?? "—"}<small>{lead.reviewCount ?? 0} reviews</small></div></td><td><div className={`score ${lead.priority}`}><b>{lead.score}</b><span><i style={{ width: `${lead.score}%` }}></i></span></div></td><td><span className={`stage ${lead.stage}`}>{lead.stage.replace("_", " ")}</span></td>{detailed && <td><small className="gap">{lead.gaps?.[0] ?? "Needs review"}</small></td>}<td><button className="row-action">•••</button></td></tr>)}</tbody></table>{!leads.length && <div className="empty">No leads match these filters.</div>}</div>;
+function LeadTable({ leads, detailed = false, onContact }: { leads: Lead[]; detailed?: boolean; onContact?: (lead: Lead) => void }) {
+  return <div className="table-wrap"><table><thead><tr><th>Business</th><th>Location</th><th>Proof</th><th>Score</th><th>Status</th>{detailed && <th>Opportunity</th>}<th></th></tr></thead><tbody>{leads.map((lead) => <tr key={lead.id}><td><div className="business-cell"><span>{lead.name.slice(0, 1)}</span><div><b>{lead.name}</b><small>{lead.category}</small></div></div></td><td>{lead.city}</td><td><div className="rating">★ {lead.rating ?? "—"}<small>{lead.reviewCount ?? 0} reviews</small></div></td><td><div className={`score ${lead.priority}`}><b>{lead.score}</b><span><i style={{ width: `${lead.score}%` }}></i></span></div></td><td><span className={`stage ${lead.stage}`}>{lead.stage.replace("_", " ")}</span></td>{detailed && <td><small className="gap">{lead.gaps?.[0] ?? "Needs review"}</small></td>}<td><button className="row-action" aria-label={`Contact ${lead.name}`} onClick={() => onContact?.(lead)}>{onContact ? "Contact" : "•••"}</button></td></tr>)}</tbody></table>{!leads.length && <div className="empty">No leads match these filters.</div>}</div>;
 }
 
 function AIInbox({ flash }: { flash: (s: string) => void }) {
@@ -214,7 +224,7 @@ function Connections({ flash }: { flash: (s: string) => void }) {
     return () => { active = false; };
   }, []);
 
-  return <div className="content"><section className="page-intro"><div><span>CONNECTION CENTRE</span><h2>Connect your services securely.</h2><p>Open a provider, enter its credentials, and ClearFlow will verify the connection before saving.</p></div></section><div className="security-callout"><span>▣</span><div><b>Your credentials are encrypted</b><p>Secrets are sent over HTTPS, encrypted before storage, and never returned to the browser, AI context, analytics, logs, or GitHub.</p></div></div>{!vaultReady && !loading && <div className="connection-warning">Secure storage is being initialized. Please try again after the latest update finishes publishing.</div>}<section className="connections">{connectionOptions.map((item, index) => { const status = statuses[item.id]; return <article key={item.id} className={status?.connected ? "connected" : ""}><span className={`connection-icon c${index}`}>{item.icon}</span><div><h3>{item.name}</h3><p>{item.use}</p><span className={`connection-state ${status?.connected ? "is-connected" : status?.lastError ? "has-error" : ""}`}><i></i>{loading ? "Checking…" : status?.connected ? "Connected and verified" : status?.lastError ? "Needs attention" : "Not connected"}</span></div><button onClick={() => setSelected(item)} disabled={loading}>{status?.connected ? "Manage" : item.required ? "Add key" : "Configure"}</button><i className={item.required ? "required" : "optional"}>{item.required ? "Required" : "Optional"}</i></article>; })}</section><section className="panel launch-check"><PanelTitle title="Launch checklist" sub="Provider approvals need to be completed once" action="Connect OpenAI" onAction={() => setSelected(connectionOptions[0])} /><div><p><span>1</span><b>Connect core API keys</b><small>OpenAI, Apify, MSG91 and Resend</small></p><p><span>2</span><b>Approve email and SMS senders</b><small>Verify domain, sender and Flow template</small></p><p><span>3</span><b>Complete India DLT registration</b><small>Required for domestic commercial SMS</small></p><p><span>4</span><b>Run safe test conversations</b><small>English, Hindi, Hinglish, opt-out and handoff</small></p></div></section>{selected && <ConnectionModal option={selected} status={statuses[selected.id]} close={() => setSelected(null)} saved={async () => { await refresh(); setSelected(null); flash(`${selected.name} connected successfully`); }} flash={flash} />}</div>;
+  return <div className="content"><section className="page-intro"><div><span>CONNECTION CENTRE</span><h2>Connect your services securely.</h2><p>Open a provider, enter its credentials, and ClearFlow will verify or authorize the connection before saving.</p></div></section><div className="security-callout"><span>▣</span><div><b>Your credentials are encrypted</b><p>Secrets are sent over HTTPS, encrypted before storage, and never returned to the browser, AI context, analytics, logs, or GitHub.</p></div></div>{!vaultReady && !loading && <div className="connection-warning">Secure storage is being initialized. Please try again after the latest update finishes publishing.</div>}<section className="connections">{connectionOptions.map((item, index) => { const status = statuses[item.id]; return <article key={item.id} className={status?.connected ? "connected" : ""}><span className={`connection-icon c${index}`}>{item.icon}</span><div><h3>{item.name}</h3><p>{item.use}</p><span className={`connection-state ${status?.connected ? "is-connected" : status?.lastError ? "has-error" : ""}`}><i></i>{loading ? "Checking…" : status?.connected ? "Connected and verified" : status?.lastError ? "Needs attention" : "Not connected"}</span></div><button onClick={() => setSelected(item)} disabled={loading}>{status?.connected ? "Manage" : item.id === "gmail" ? "Authorize" : "Add key"}</button><i className={item.required ? "required" : "optional"}>{item.required ? "Required" : "Optional"}</i></article>; })}</section><section className="panel launch-check"><PanelTitle title="Launch checklist" sub="Provider approvals need to be completed once" action="Connect OpenAI" onAction={() => setSelected(connectionOptions[0])} /><div><p><span>1</span><b>Connect core services</b><small>OpenAI, Apify, Gmail and Twilio</small></p><p><span>2</span><b>Authorize the Gmail mailbox</b><small>Google OAuth enables sending and reply sync</small></p><p><span>3</span><b>Configure Twilio compliance</b><small>Voice consent and India SMS routing or DLT</small></p><p><span>4</span><b>Run safe test conversations</b><small>Email, SMS, call, opt-out and handoff</small></p></div></section>{selected && <ConnectionModal option={selected} status={statuses[selected.id]} close={() => setSelected(null)} saved={async () => { await refresh(); setSelected(null); flash(`${selected.name} connected successfully`); }} flash={flash} />}</div>;
 }
 
 function ConnectionModal({ option, status, close, saved, flash }: { option: ConnectionOption; status?: ConnectionState; close: () => void; saved: () => Promise<void>; flash: (s: string) => void }) {
@@ -227,8 +237,9 @@ function ConnectionModal({ option, status, close, saved, flash }: { option: Conn
     const values = Object.fromEntries(Array.from(new FormData(form).entries()).map(([key, value]) => [key, String(value).trim()]));
     try {
       const response = await fetch("/api/connections", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: option.id, values }) });
-      const data = await response.json() as { error?: string };
+      const data = await response.json() as { error?: string; authorizationRequired?: boolean; authorizationUrl?: string };
       if (!response.ok) throw new Error(data.error ?? "Connection test failed");
+      if (data.authorizationRequired && data.authorizationUrl) { window.location.assign(data.authorizationUrl); return; }
       form.reset(); await saved();
     } catch (failure) { setError(failure instanceof Error ? failure.message : "Connection test failed"); }
     finally { setSaving(false); }
@@ -245,7 +256,34 @@ function ConnectionModal({ option, status, close, saved, flash }: { option: Conn
     } catch (failure) { setError(failure instanceof Error ? failure.message : "Could not disconnect provider"); setSaving(false); }
   }
 
-  return <div className="modal-backdrop" onMouseDown={close}><form className="modal connection-modal" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()} autoComplete="off"><div className="modal-head"><div><span>{status?.connected ? "MANAGE CONNECTION" : "SECURE CONNECTION"}</span><h2>{option.name}</h2><p>Credentials are verified with {option.name} before encrypted storage.</p></div><button type="button" onClick={close}>×</button></div><div className="connection-form">{status?.configured && <div className="saved-secret-note"><b>Saved credentials are hidden</b><span>Leave a field blank to keep its current value, or enter a replacement.</span></div>}{option.fields.map((field) => <label key={field.key}>{field.label}{field.required && <em>Required</em>}<input name={field.key} type={field.type ?? "password"} required={Boolean(field.required && !status?.configured)} placeholder={status?.configured ? "Saved securely — enter only to replace" : field.required ? "Enter credential" : "Optional"} autoComplete="new-password" />{field.hint && <small>{field.hint}</small>}</label>)}{error && <div className="connection-error"><b>Connection not saved</b><span>{error}</span></div>}<a href={option.helpUrl} target="_blank" rel="noreferrer">Open {option.name} setup ↗</a></div><footer>{status?.connected && <button type="button" className="danger" onClick={disconnect} disabled={saving}>Disconnect</button>}<button type="button" onClick={close}>Cancel</button><button className="primary" disabled={saving}>{saving ? "Testing securely…" : status?.connected ? "Test & update" : "Test & connect"}</button></footer></form></div>;
+  return <div className="modal-backdrop" onMouseDown={close}><form className="modal connection-modal" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()} autoComplete="off"><div className="modal-head"><div><span>{status?.connected ? "MANAGE CONNECTION" : "SECURE CONNECTION"}</span><h2>{option.name}</h2><p>{option.id === "gmail" ? "Credentials are encrypted first, then Google opens its secure authorization screen." : `Credentials are verified with ${option.name} before encrypted storage.`}</p></div><button type="button" onClick={close}>×</button></div><div className="connection-form">{status?.configured && <div className="saved-secret-note"><b>Saved credentials are hidden</b><span>Leave a field blank to keep its current value, or enter a replacement.</span></div>}{option.fields.map((field) => <label key={field.key}>{field.label}{field.required && <em>Required</em>}<input name={field.key} type={field.type ?? "password"} required={Boolean(field.required && !status?.configured)} placeholder={status?.configured ? "Saved securely — enter only to replace" : field.required ? "Enter credential" : "Optional"} autoComplete="new-password" />{field.hint && <small>{field.hint}</small>}</label>)}{error && <div className="connection-error"><b>Connection not saved</b><span>{error}</span></div>}<a href={option.helpUrl} target="_blank" rel="noreferrer">Open {option.name} setup ↗</a></div><footer>{status?.connected && <button type="button" className="danger" onClick={disconnect} disabled={saving}>Disconnect</button>}<button type="button" onClick={close}>Cancel</button><button className="primary" disabled={saving}>{saving ? option.id === "gmail" ? "Preparing Google…" : "Testing securely…" : option.id === "gmail" ? "Save & authorize Gmail" : status?.connected ? "Test & update" : "Test & connect"}</button></footer></form></div>;
+}
+
+function OutreachModal({ lead, close, sent, flash }: { lead: Lead; close: () => void; sent: (message: string) => void; flash: (s: string) => void }) {
+  const [channel, setChannel] = useState<"email" | "sms" | "voice">("email");
+  const [destination, setDestination] = useState(lead.email ?? "");
+  const [saving, setSaving] = useState(false);
+
+  function changeChannel(next: "email" | "sms" | "voice") {
+    setChannel(next); setDestination(next === "email" ? lead.email ?? "" : lead.phone ?? "");
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setSaving(true);
+    const values = Object.fromEntries(new FormData(event.currentTarget).entries());
+    try {
+      const consentResponse = await fetch("/api/consents", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leadId: lead.id, channel, source: "operator_verified", proof: values.proof }) });
+      const consent = await consentResponse.json() as { error?: string };
+      if (!consentResponse.ok) throw new Error(consent.error ?? "Consent proof could not be recorded");
+      const outreachResponse = await fetch("/api/outreach", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leadId: lead.id, channel, to: destination, subject: values.subject, body: values.body }) });
+      const outreach = await outreachResponse.json() as { error?: string; status?: string };
+      if (!outreachResponse.ok) throw new Error(outreach.error ?? "Outreach could not be sent");
+      sent(channel === "voice" ? "Twilio call queued successfully" : `${channel === "email" ? "Gmail email" : "Twilio SMS"} sent successfully`);
+    } catch (error) { flash(error instanceof Error ? error.message : "Outreach failed"); }
+    finally { setSaving(false); }
+  }
+
+  return <div className="modal-backdrop" onMouseDown={close}><form className="modal outreach-modal" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()}><div className="modal-head"><div><span>CONSENT-FIRST OUTREACH</span><h2>Contact {lead.name}</h2><p>Choose Gmail, Twilio SMS, or an AI-assisted Twilio call.</p></div><button type="button" onClick={close}>×</button></div><div className="form-grid"><label>Channel<select value={channel} onChange={(event) => changeChannel(event.target.value as "email" | "sms" | "voice")}><option value="email">Gmail email</option><option value="sms">Twilio SMS</option><option value="voice">Twilio call</option></select></label><label>{channel === "email" ? "Recipient email" : "Phone number"}<input value={destination} onChange={(event) => setDestination(event.target.value)} type={channel === "email" ? "email" : "tel"} required placeholder={channel === "email" ? "owner@business.com" : "+91 98765 43210"} /></label>{channel === "email" && <label className="full">Subject<input name="subject" required defaultValue={`A website growth idea for ${lead.name}`} /></label>}{channel !== "voice" && <label className="full">Message<textarea name="body" required defaultValue={channel === "email" ? `Hi ${lead.name} team,\n\nI noticed an opportunity to improve how local customers discover and contact your business online. Clear Web Solutions builds focused websites and booking journeys for local businesses.\n\nWould you be open to a short consultation?\n\nRegards,\nClear Web Solutions` : `Hi ${lead.name}, Clear Web Solutions has an idea to improve your online enquiries. Would you be open to a short consultation? Reply STOP to opt out.`} /></label>}<label className="full">Consent proof<input name="proof" required placeholder="Where and when this contact explicitly agreed to this channel" /><small>Public listing contact details alone are not consent.</small></label></div><div className="modal-note">Calls and messages are sent only after you record channel-specific consent. India DLT/UCC and Twilio routing requirements still apply.</div><footer><button type="button" onClick={close}>Cancel</button><button className="primary" disabled={saving}>{saving ? channel === "voice" ? "Queuing call…" : "Sending…" : channel === "voice" ? "Queue Twilio call" : "Record consent & send"}</button></footer></form></div>;
 }
 
 function DiscoveryModal({ close, onImported, flash }: { close: () => void; onImported: (leads: Lead[]) => void; flash: (s: string) => void }) {
@@ -290,5 +328,5 @@ function DiscoveryModal({ close, onImported, flash }: { close: () => void; onImp
 function AddLeadModal({ close, onCreated, flash }: { close: () => void; onCreated: (lead: Lead) => void; flash: (s: string) => void }) {
   const [saving, setSaving] = useState(false);
   async function submit(e: FormEvent<HTMLFormElement>) { e.preventDefault(); setSaving(true); const fd = new FormData(e.currentTarget); const body = Object.fromEntries(fd.entries()); try { const res = await fetch("/api/leads", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); const data = await res.json(); if (!res.ok) throw new Error(data.error); onCreated({ ...data.lead, category: String(body.category), rating: Number(body.rating), reviewCount: Number(body.reviewCount), stage: "researched", gaps: data.lead.gaps }); } catch (error) { flash(error instanceof Error ? error.message : "Could not create lead"); } finally { setSaving(false); } }
-  return <div className="modal-backdrop" onMouseDown={close}><form className="modal" onSubmit={submit} onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><span>NEW OPPORTUNITY</span><h2>Add and score a lead</h2><p>The score is calculated from evidence, not AI guesswork.</p></div><button type="button" onClick={close}>×</button></div><div className="form-grid"><label>Business name<input name="name" required placeholder="e.g. Spice Route Café" /></label><label>Business type<select name="category"><option>Restaurant</option><option>Café</option><option>Salon</option><option>Gym</option><option>Clinic</option><option>Local Business</option></select></label><label>City<input name="city" required placeholder="Pune" /></label><label>Phone<input name="phone" placeholder="+91 98765 43210" /></label><label>Rating<input name="rating" type="number" min="0" max="5" step="0.1" placeholder="4.5" /></label><label>Review count<input name="reviewCount" type="number" min="0" placeholder="150" /></label><label className="full">Website URL<input name="websiteUrl" type="url" placeholder="Leave blank if no website" /></label></div><div className="modal-note">Consent is not assumed from public contact information. Outreach remains locked until proof is recorded.</div><footer><button type="button" onClick={close}>Cancel</button><button className="primary" disabled={saving}>{saving ? "Scoring…" : "Add & score lead"}</button></footer></form></div>;
+  return <div className="modal-backdrop" onMouseDown={close}><form className="modal" onSubmit={submit} onMouseDown={(e) => e.stopPropagation()}><div className="modal-head"><div><span>NEW OPPORTUNITY</span><h2>Add and score a lead</h2><p>The score is calculated from evidence, not AI guesswork.</p></div><button type="button" onClick={close}>×</button></div><div className="form-grid"><label>Business name<input name="name" required placeholder="e.g. Spice Route Café" /></label><label>Business type<select name="category"><option>Restaurant</option><option>Café</option><option>Salon</option><option>Gym</option><option>Clinic</option><option>Local Business</option></select></label><label>City<input name="city" required placeholder="Pune" /></label><label>Phone<input name="phone" placeholder="+91 98765 43210" /></label><label>Email<input name="email" type="email" placeholder="owner@business.com" /></label><label>Rating<input name="rating" type="number" min="0" max="5" step="0.1" placeholder="4.5" /></label><label>Review count<input name="reviewCount" type="number" min="0" placeholder="150" /></label><label className="full">Website URL<input name="websiteUrl" type="url" placeholder="Leave blank if no website" /></label></div><div className="modal-note">Consent is not assumed from public contact information. Outreach remains locked until proof is recorded.</div><footer><button type="button" onClick={close}>Cancel</button><button className="primary" disabled={saving}>{saving ? "Scoring…" : "Add & score lead"}</button></footer></form></div>;
 }
